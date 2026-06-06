@@ -3,7 +3,6 @@ import type { AccessStatus } from '../services/api';
 import { AccessGate } from './AccessGate';
 import { GoldBackground } from '../components/layout/GoldBackground';
 import { GoldParticles } from '../components/layout/GoldParticles';
-import { FloatingMoney } from '../components/effects/FloatingMoney';
 import { Header } from '../components/layout/Header';
 import { Footer } from '../components/layout/Footer';
 import { ExpandableSection } from '../components/ui/ExpandableSection';
@@ -124,7 +123,6 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     <div className="relative min-h-full bg-prime-bg">
       <GoldBackground />
       <GoldParticles />
-      <FloatingMoney />
 
       <div className="relative z-10 mx-auto min-h-full w-full max-w-[430px]">
         <Header />

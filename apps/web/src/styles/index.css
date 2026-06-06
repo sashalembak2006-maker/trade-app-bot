@@ -73,9 +73,9 @@ body {
 
 .grid-bg {
   background-image:
-    linear-gradient(rgba(212, 175, 55, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(212, 175, 55, 0.04) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(212, 175, 55, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212, 175, 55, 0.055) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .ticker-track {

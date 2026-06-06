@@ -1,64 +1,61 @@
 import { motion } from 'framer-motion';
 
-const GLOW_ORBS = [
-  { x: '15%', y: '20%', size: 280, delay: 0 },
-  { x: '85%', y: '70%', size: 220, delay: 1.2 },
-  { x: '50%', y: '90%', size: 180, delay: 0.6 },
-];
+/** Staggered $ watermark grid — matches TRADE APP BOT reference. */
+const DOLLAR_SIGNS = Array.from({ length: 56 }, (_, i) => {
+  const col = i % 7;
+  const row = Math.floor(i / 7);
+  return {
+    x: `${4 + col * 14 + (row % 2) * 7}%`,
+    y: `${2 + row * 12}%`,
+    size: 10 + (i % 4) * 4,
+    delay: (i % 8) * 0.28,
+    baseOpacity: 0.06 + (i % 5) * 0.025,
+  };
+});
 
 export function GoldBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#030304]">
-      {/* Deep gradient base */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#08080c] via-[#050508] to-[#020203]" />
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#050505]">
+      {/* Base — deep charcoal */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[#0a0906] via-[#050505] to-[#040404]" />
 
-      {/* Subtle trading grid */}
-      <div className="absolute inset-0 grid-bg opacity-[0.35]" />
+      {/* Gold trading grid */}
+      <div className="absolute inset-0 grid-bg opacity-50" />
 
-      {/* Soft gold ambient light */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(212,175,55,0.14),transparent_60%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_100%_50%,rgba(168,85,247,0.06),transparent_50%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_30%_at_0%_80%,rgba(34,197,94,0.04),transparent_45%)]" />
+      {/* Top gold ambient glow (reference screenshot) */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_45%_at_50%_0%,rgba(212,175,55,0.14),transparent_58%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_35%_at_85%_75%,rgba(212,175,55,0.07),transparent_45%)]" />
 
-      {/* Faint chart silhouette */}
-      <svg
-        className="absolute bottom-0 left-0 right-0 h-[38%] w-full opacity-[0.06]"
-        viewBox="0 0 400 120"
-        preserveAspectRatio="none"
-        aria-hidden
-      >
-        <polyline
-          fill="none"
-          stroke="#d4af37"
-          strokeWidth="1.5"
-          points="0,90 40,75 80,82 120,55 160,60 200,35 240,42 280,25 320,30 360,15 400,20"
-        />
-        <polyline
-          fill="none"
-          stroke="#22c55e"
-          strokeWidth="1"
-          points="0,100 50,95 100,88 150,92 200,78 250,85 300,70 350,75 400,65"
-        />
-      </svg>
-
-      {GLOW_ORBS.map((o, i) => (
-        <motion.div
+      {/* Floating $ pattern */}
+      {DOLLAR_SIGNS.map((d, i) => (
+        <motion.span
           key={i}
-          className="absolute rounded-full bg-prime-gold/8 blur-3xl"
+          className="absolute select-none font-bold leading-none text-prime-gold"
           style={{
-            left: o.x,
-            top: o.y,
-            width: o.size,
-            height: o.size,
-            transform: 'translate(-50%, -50%)',
+            left: d.x,
+            top: d.y,
+            fontSize: d.size,
+            textShadow: '0 0 12px rgba(212,175,55,0.15)',
           }}
-          animate={{ opacity: [0.25, 0.45, 0.25], scale: [1, 1.08, 1] }}
-          transition={{ duration: 7 + i, repeat: Infinity, delay: o.delay }}
-        />
+          animate={{
+            opacity: [d.baseOpacity * 0.7, d.baseOpacity * 1.5, d.baseOpacity * 0.7],
+            y: [0, -7, 0],
+          }}
+          transition={{ duration: 4.5 + (i % 3), repeat: Infinity, delay: d.delay }}
+        >
+          $
+        </motion.span>
       ))}
 
-      {/* Top vignette */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
+      {/* Central soft bloom */}
+      <motion.div
+        className="absolute left-1/2 top-[28%] h-72 w-72 -translate-x-1/2 rounded-full bg-prime-gold/[0.06] blur-3xl"
+        animate={{ scale: [1, 1.18, 1], opacity: [0.35, 0.55, 0.35] }}
+        transition={{ duration: 7, repeat: Infinity }}
+      />
+
+      {/* Edge vignette */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/50" />
     </div>
   );
 }
