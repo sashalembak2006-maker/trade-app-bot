@@ -4,7 +4,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { Bot, InlineKeyboard, InputFile, type Context } from 'grammy';
 import { syncUser, claimDeposit } from './api.js';
-import { registerAdminHandlers } from './admin.js';
+import { isAdmin, registerAdminHandlers } from './admin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -140,7 +140,8 @@ async function handleStart(ctx: Context) {
     return;
   }
 
-  const limited = user ? hasLimitedAccess(user) : false;
+  const isBotAdmin = isAdmin(String(from.id), adminIds);
+  const limited = isBotAdmin || (user ? hasLimitedAccess(user) : false);
   if (!limited) {
     await ctx.reply(
       '🔒 Доступ закритий. Зверніться до адміністратора або очікуйте запрошення.',
@@ -170,7 +171,8 @@ bot.callbackQuery('menu:check_sub', async (ctx) => {
   }
 
   const user = await syncUser(from.id, from);
-  if (!user || !hasLimitedAccess(user)) {
+  const isBotAdmin = isAdmin(String(from.id), adminIds);
+  if (!isBotAdmin && (!user || !hasLimitedAccess(user))) {
     await ctx.editMessageText(
       '🔒 Доступ закритий. Зверніться до адміністратора або очікуйте запрошення.',
       { reply_markup: buildWelcomeKeyboard(false) },
