@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-size="11" font-weight="700">1AO3 (Volume)</text>
+  <rect x="30" y="90" width="14" height="30" fill="#475569"/>
+  <rect x="55" y="85" width="14" height="35" fill="#475569"/>
+  <rect x="80" y="70" width="14" height="50" fill="#22c55e"/>
+  <rect x="105" y="75" width="14" height="45" fill="#22c55e"/>
+  <rect x="130" y="95" width="14" height="25" fill="#475569"/>
+  <rect x="155" y="60" width="14" height="60" fill="#22c55e"/>
+  <rect x="180" y="55" width="14" height="65" fill="#22c55e"/>
+  <polyline points="25,55 80,48 130,62 180,35 230,28 280,22" stroke="#d4af37" stroke-width="2" fill="none"/>
+  <text x="200" y="115" fill="#22c55e" font-size="9">&V=0 ‘ + >1AO3 ‘ = A8;L=89 @CE</text>
+</svg>

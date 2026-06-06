@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-size="11" font-weight="700">ADX  A8;0 B@5=4C</text>
+  <line x1="12" y1="70" x2="348" y2="70" stroke="#d4af37" stroke-opacity="0.4" stroke-dasharray="4 4"/>
+  <text x="14" y="68" fill="#d4af37" font-size="9">ADX 25</text>
+  <polyline points="20,110 70,105 120,90 170,65 220,45 270,35 320,30 340,28" stroke="#22c55e" stroke-width="2.5" fill="none"/>
+  <text x="200" y="115" fill="#94a3b8" font-size="9">ADX &gt; 25 = A8;L=89 B@5=4, B>@3C9B5 70 =0?@O<:><</text>
+</svg>

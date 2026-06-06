@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-size="11" font-weight="700">Bollinger Bands</text>
+  <path d="M20,90 Q90,30 180,50 T340,40" stroke="#64748b" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <path d="M20,70 Q90,55 180,65 T340,58" stroke="#d4af37" stroke-width="2" fill="none"/>
+  <path d="M20,50 Q90,80 180,80 T340,75" stroke="#64748b" stroke-width="1.5" fill="none" opacity="0.6"/>
+  <polyline points="20,68 60,62 100,58 140,72 180,55 220,48 260,52 300,38 340,42" stroke="#a855f7" stroke-width="2" fill="none"/>
+  <circle cx="300" cy="38" r="4" fill="#ef4444"/>
+  <text x="220" y="28" fill="#ef4444" font-size="9">5@E=O A<C30 ’ PUT</text>
+</svg>

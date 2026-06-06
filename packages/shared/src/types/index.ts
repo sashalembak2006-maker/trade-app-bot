@@ -109,6 +109,8 @@ export interface IndicatorInfo {
   detailUk: string;
   detailEn: string;
   icon: string;
+  /** Chart illustration in /indicators/{id}.svg */
+  imageUrl?: string;
 }
 
 export interface LearningArticle {

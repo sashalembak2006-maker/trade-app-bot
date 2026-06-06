@@ -81,6 +81,7 @@ export interface IndicatorInfo {
   detailUk: string;
   detailEn: string;
   icon: string;
+  imageUrl?: string;
 }
 
 export interface LearningArticle {

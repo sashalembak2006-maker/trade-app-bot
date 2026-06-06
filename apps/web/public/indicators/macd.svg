@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-family="system-ui" font-size="11" font-weight="700">MACD</text>
+  <line x1="12" y1="75" x2="348" y2="75" stroke="#334155" stroke-width="1"/>
+  <rect x="40" y="78" width="18" height="22" fill="#22c55e" opacity="0.7"/>
+  <rect x="70" y="72" width="18" height="28" fill="#22c55e" opacity="0.8"/>
+  <rect x="100" y="85" width="18" height="15" fill="#ef4444" opacity="0.7"/>
+  <rect x="130" y="90" width="18" height="10" fill="#ef4444"/>
+  <rect x="160" y="68" width="18" height="32" fill="#22c55e"/>
+  <rect x="190" y="55" width="18" height="45" fill="#22c55e"/>
+  <polyline points="30,95 80,88 130,92 180,70 230,58 280,50 330,42" stroke="#3b82f6" stroke-width="2" fill="none"/>
+  <polyline points="30,100 80,94 130,98 180,78 230,68 280,62 330,55" stroke="#f5e642" stroke-width="2" fill="none"/>
+  <text x="250" y="30" fill="#22c55e" font-size="9">8G0G89 ?5@5B8= ’ CALL</text>
+</svg>

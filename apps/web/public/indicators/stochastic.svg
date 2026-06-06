@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-size="11" font-weight="700">Stochastic</text>
+  <line x1="12" y1="40" x2="348" y2="40" stroke="#ef4444" stroke-opacity="0.3" stroke-dasharray="3 3"/>
+  <line x1="12" y1="100" x2="348" y2="100" stroke="#22c55e" stroke-opacity="0.3" stroke-dasharray="3 3"/>
+  <polyline points="20,75 60,82 100,65 140,50 180,70 220,45 260,55 300,38 340,48" stroke="#f5e642" stroke-width="2" fill="none"/>
+  <polyline points="20,85 60,90 100,78 140,62 180,78 220,58 260,68 300,52 340,58" stroke="#a855f7" stroke-width="2" fill="none" opacity="0.8"/>
+  <text x="240" y="115" fill="#22c55e" font-size="9">%K ?5@5B8=0T %D 7=87C ’ CALL</text>
+</svg>

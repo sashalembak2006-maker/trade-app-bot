@@ -16,7 +16,7 @@ function resolveState(
 }
 
 export function DataSourceBadge() {
-  const { marketStatus, wsConnected, language } = useAppStore();
+  const { marketStatus, language } = useAppStore();
   const t = useT(language);
   const state = resolveState(marketStatus);
 
@@ -48,15 +48,15 @@ export function DataSourceBadge() {
     },
   };
 
+  // Premium UI: hide technical data-source labels when market is connected.
+  if (state === 'hybrid' || state === 'real' || state === 'stale' || state === 'demo') return null;
+
   const cfg = map[state];
 
   return (
     <div className={`mx-4 mt-3 flex items-center justify-center gap-2 rounded-xl border px-4 py-2 text-[10px] font-bold tracking-wide ${cfg.className}`}>
       <span className={`inline-block h-2 w-2 rounded-full ${cfg.dot}`} />
       <span>{cfg.label}</span>
-      {(state === 'real' || state === 'hybrid') && !wsConnected && (
-        <span className="ml-2 text-slate-400">• WS reconnecting…</span>
-      )}
     </div>
   );
 }

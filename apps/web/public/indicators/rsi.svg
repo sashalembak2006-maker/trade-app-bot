@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" fill="none">
+  <rect width="360" height="140" rx="12" fill="#0a0a0f"/>
+  <text x="16" y="22" fill="#d4af37" font-family="system-ui" font-size="11" font-weight="700">RSI (14)</text>
+  <line x1="12" y1="38" x2="348" y2="38" stroke="#ef4444" stroke-opacity="0.35" stroke-dasharray="4 4"/>
+  <line x1="12" y1="102" x2="348" y2="102" stroke="#22c55e" stroke-opacity="0.35" stroke-dasharray="4 4"/>
+  <text x="14" y="36" fill="#ef4444" font-size="9">70 ?5@5:C?;5=VABL</text>
+  <text x="14" y="108" fill="#22c55e" font-size="9">30 ?5@5?@>40=VABL</text>
+  <polyline points="20,88 55,95 90,72 125,58 160,42 195,55 230,38 265,48 300,32 340,45" stroke="#a855f7" stroke-width="2.5" fill="none"/>
+  <circle cx="300" cy="32" r="5" fill="#22c55e"/>
+  <text x="248" y="28" fill="#22c55e" font-size="9">CALL 7>=0</text>
+</svg>
