@@ -1,5 +1,6 @@
 import type { PriceUpdate } from '../hooks/useWebSocket';
 import { logger } from './logger';
+import { getRuntimeWsUrl } from './runtime-config';
 
 type MessageHandler = (data: PriceUpdate) => void;
 type StatusHandler = (connected: boolean) => void;
@@ -15,11 +16,7 @@ class WebSocketClient {
 
   connect() {
     // Dev: connect straight to API — Vite WS proxy is flaky on some Windows setups.
-    const url =
-      import.meta.env.VITE_WS_URL ??
-      (import.meta.env.DEV
-        ? 'ws://127.0.0.1:3001/ws'
-        : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    const url = getRuntimeWsUrl();
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }

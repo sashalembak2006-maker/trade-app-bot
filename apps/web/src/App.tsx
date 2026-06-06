@@ -8,6 +8,7 @@ import { useAppStore } from './store/useAppStore';
 import { useTelegram } from './hooks/useTelegram';
 import { api, setTelegramProfile, type AccessStatus } from './services/api';
 import { initTelegramWebApp } from './services/telegram';
+import { loadRuntimeConfig } from './services/runtime-config';
 
 function AppRouter() {
   const { user } = useTelegram();
@@ -31,7 +32,7 @@ function AppRouter() {
       return access;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Помилка зʼєднання з API';
-      setApiError(`Не вдалося зʼєднатися з сервером. Запустіть: npm run server (${msg})`);
+      setApiError(`Не вдалося зʼєднатися з API. Перевірте, що сервер увімкнений (${msg})`);
       return null;
     } finally {
       setLoading(false);
@@ -40,7 +41,7 @@ function AppRouter() {
 
   useEffect(() => {
     initTelegramWebApp();
-    refreshAccess(true);
+    void loadRuntimeConfig().then(() => refreshAccess(true));
   }, [refreshAccess]);
 
   if (loading) {

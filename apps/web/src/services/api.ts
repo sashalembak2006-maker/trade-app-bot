@@ -1,15 +1,12 @@
 import type { Asset, CalculatorResult, IndicatorInfo, LearningArticle, NewsItem, SignalResult, MarketAnalysisData } from '../types';
+import { getRuntimeApiUrl } from './runtime-config';
 
 function getApiBase(): string {
-  const env = import.meta.env.VITE_API_URL;
-  if (env && env.length > 0) return env.replace(/\/$/, '');
-  // Empty string = same-origin relative URLs. In dev this routes through the
-  // Vite proxy (see vite.config.ts) which talks to the API over IPv4 and avoids
-  // the slow "localhost" -> IPv6 fallback that made direct calls hang.
+  const runtime = getRuntimeApiUrl();
+  if (runtime) return runtime;
+  // Empty = same-origin relative URLs (dev Vite proxy → API).
   return '';
 }
-
-const API = getApiBase();
 
 let telegramId: string | null = null;
 let telegramFirstName: string | null = null;
@@ -45,7 +42,7 @@ export interface ApiError extends Error {
 const DEFAULT_TIMEOUT = 8000;
 
 async function fetchJson<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
-  const url = `${API}${path}`;
+  const url = `${getApiBase()}${path}`;
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -171,7 +168,7 @@ export const api = {
 };
 
 async function adminFetch(path: string, token: string, options?: RequestInit) {
-  const r = await fetch(`${API}${path}`, {
+  const r = await fetch(`${getApiBase()}${path}`, {
     ...options,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...options?.headers },
   });
@@ -182,7 +179,7 @@ async function adminFetch(path: string, token: string, options?: RequestInit) {
 
 export const adminApi = {
   login: async (email: string, password: string) => {
-    const r = await fetch(`${API}/api/admin/login`, {
+    const r = await fetch(`${getApiBase()}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
