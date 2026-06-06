@@ -11,6 +11,7 @@ export * from './market/official-pocket-provider.js';
 export * from './market/collector-types.js';
 export * from './market/mock-data.js';
 export * from './market/pocket-assets.js';
+export * from './market/asset-flags.js';
 export * from './signal/engine.js';
 export * from './signal/indicators.js';
 export * from './data/content.js';

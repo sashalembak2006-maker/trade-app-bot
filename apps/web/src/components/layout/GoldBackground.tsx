@@ -1,36 +1,64 @@
 import { motion } from 'framer-motion';
 
-const DOLLAR_SIGNS = Array.from({ length: 24 }, (_, i) => ({
-  x: `${(i * 17 + 5) % 95}%`,
-  y: `${(i * 23 + 10) % 90}%`,
-  size: 10 + (i % 4) * 4,
-  delay: i * 0.3,
-}));
+const GLOW_ORBS = [
+  { x: '15%', y: '20%', size: 280, delay: 0 },
+  { x: '85%', y: '70%', size: 220, delay: 1.2 },
+  { x: '50%', y: '90%', size: 180, delay: 0.6 },
+];
 
 export function GoldBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-gradient-to-b from-[#050505] via-[#0a0906] to-[#050505]">
-      <div className="absolute inset-0 grid-bg opacity-50" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(212,175,55,0.12),transparent_55%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_80%_80%,rgba(212,175,55,0.06),transparent_40%)]" />
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#030304]">
+      {/* Deep gradient base */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[#08080c] via-[#050508] to-[#020203]" />
 
-      {DOLLAR_SIGNS.map((d, i) => (
-        <motion.span
+      {/* Subtle trading grid */}
+      <div className="absolute inset-0 grid-bg opacity-[0.35]" />
+
+      {/* Soft gold ambient light */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(212,175,55,0.14),transparent_60%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_100%_50%,rgba(168,85,247,0.06),transparent_50%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_30%_at_0%_80%,rgba(34,197,94,0.04),transparent_45%)]" />
+
+      {/* Faint chart silhouette */}
+      <svg
+        className="absolute bottom-0 left-0 right-0 h-[38%] w-full opacity-[0.06]"
+        viewBox="0 0 400 120"
+        preserveAspectRatio="none"
+        aria-hidden
+      >
+        <polyline
+          fill="none"
+          stroke="#d4af37"
+          strokeWidth="1.5"
+          points="0,90 40,75 80,82 120,55 160,60 200,35 240,42 280,25 320,30 360,15 400,20"
+        />
+        <polyline
+          fill="none"
+          stroke="#22c55e"
+          strokeWidth="1"
+          points="0,100 50,95 100,88 150,92 200,78 250,85 300,70 350,75 400,65"
+        />
+      </svg>
+
+      {GLOW_ORBS.map((o, i) => (
+        <motion.div
           key={i}
-          className="absolute font-bold text-prime-gold/20"
-          style={{ left: d.x, top: d.y, fontSize: d.size }}
-          animate={{ opacity: [0.08, 0.22, 0.08], y: [0, -8, 0] }}
-          transition={{ duration: 4 + (i % 3), repeat: Infinity, delay: d.delay }}
-        >
-          $
-        </motion.span>
+          className="absolute rounded-full bg-prime-gold/8 blur-3xl"
+          style={{
+            left: o.x,
+            top: o.y,
+            width: o.size,
+            height: o.size,
+            transform: 'translate(-50%, -50%)',
+          }}
+          animate={{ opacity: [0.25, 0.45, 0.25], scale: [1, 1.08, 1] }}
+          transition={{ duration: 7 + i, repeat: Infinity, delay: o.delay }}
+        />
       ))}
 
-      <motion.div
-        className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full bg-prime-gold/5 blur-3xl"
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 6, repeat: Infinity }}
-      />
+      {/* Top vignette */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60" />
     </div>
   );
 }

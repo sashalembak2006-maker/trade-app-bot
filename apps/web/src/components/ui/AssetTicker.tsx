@@ -1,5 +1,6 @@
 import { useAppStore } from '../../store/useAppStore';
 import { formatPercentChange } from '../../utils/format';
+import { AssetIcon } from './AssetIcon';
 
 export function AssetTicker() {
   const assets = useAppStore((s) => s.assets);
@@ -14,9 +15,8 @@ export function AssetTicker() {
       <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-cyber-bg to-transparent" />
       <div className="ticker-track flex w-max gap-5 px-3">
         {doubled.map((a, i) => (
-          <div key={`${a.symbol}-${i}`} className="flex shrink-0 items-center gap-1.5 text-[11px]">
-            <span>{a.flags[0]}</span>
-            {a.flags[1] && <span>{a.flags[1]}</span>}
+          <div key={`${a.symbol}-${i}`} className="flex shrink-0 items-center gap-2 text-[11px]">
+            <AssetIcon flags={a.flags} size="sm" />
             <span className="font-bold text-white">{a.symbol}</span>
             <span className="text-slate-400">{a.price != null ? a.price.toLocaleString('uk-UA', { maximumFractionDigits: 4 }) : '—'}</span>
             <span className="font-bold text-neon-yellow">{a.payout}%</span>

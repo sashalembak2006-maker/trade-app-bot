@@ -119,6 +119,9 @@ export interface LearningArticle {
   contentEn: string;
   tab: 'basics' | 'books';
   duration: string;
+  /** Printable HTML guide (user saves as PDF from browser). */
+  guideUrl?: string;
+  icon?: string;
 }
 
 export interface MarketAnalysisData {

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ризик-менеджмент — TRADE APP BOT</title>
+  <style>
+    @media print { .no-print { display: none; } body { background: #fff; color: #111; } }
+    body { font-family: Georgia, serif; max-width: 720px; margin: 2rem auto; padding: 0 1.5rem; background: #0a0a0c; color: #e8e4d9; line-height: 1.65; }
+    h1 { color: #d4af37; border-bottom: 2px solid #d4af37; padding-bottom: 0.5rem; }
+    h2 { color: #f5d76e; margin-top: 2rem; }
+    .chart { font-family: monospace; background: #111; padding: 1rem; border-radius: 8px; font-size: 12px; color: #22c55e; margin: 1rem 0; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+    th, td { border: 1px solid #333; padding: 0.5rem; text-align: left; }
+    th { background: #1a1a1f; color: #d4af37; }
+    .btn { display: inline-block; margin: 1rem 0; padding: 0.75rem 1.5rem; background: #d4af37; color: #000; text-decoration: none; font-weight: bold; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <button class="no-print btn" onclick="window.print()">📥 Зберегти як PDF (Друк)</button>
+  <h1>Ризик-менеджмент для короткострокової торгівлі</h1>
+  <p><strong>TRADE APP BOT</strong> — навчальний гайд. Не є фінансовою порадою.</p>
+
+  <h2>1. Правило 1–2% на угоду</h2>
+  <p>Ніколи не ризикуйте більше 1–2% депозиту на одну угоду. При депозиті $500 це $5–10 на сигнал.</p>
+  <table>
+    <tr><th>Депозит</th><th>1%</th><th>2%</th></tr>
+    <tr><td>$100</td><td>$1</td><td>$2</td></tr>
+    <tr><td>$500</td><td>$5</td><td>$10</td></tr>
+    <tr><td>$1000</td><td>$10</td><td>$20</td></tr>
+  </table>
+
+  <h2>2. Структура капіталу (приклад)</h2>
+  <div class="chart">
+    Депозит $1000
+    ├── Торговий рахунок (70%) → $700 для угод
+    ├── Резерв (20%) → $200 не чіпати 1 місяць
+    └── Навчання (10%) → $100 на тести / демо
+  </div>
+
+  <h2>3. Крипто: волатильність BTC</h2>
+  <p>На BTC/USDT рух 0.3% за 1 хвилину — норма. Коротка експірація (30с–1м) = більше шуму.</p>
+  <div class="chart">
+    BTC  $67,200 ──╮     ╭── $67,450  (імпульс вгору)
+                  ╰──╯
+         Вхід CALL після відскоку від підтримки + RSI &lt; 35
+  </div>
+
+  <h2>4. Денні ліміти</h2>
+  <ul>
+    <li>Макс. просадка за день: 5% депозиту — стоп торгівлі</li>
+    <li>Макс. 3 програші підряд — пауза 30 хв</li>
+    <li>Мартингейл: не більше ×2, максимум 2 кроки</li>
+  </ul>
+
+  <h2>5. Торговий журнал (шаблон)</h2>
+  <table>
+    <tr><th>Дата</th><th>Пара</th><th>Напрям</th><th>Експірація</th><th>Результат</th><th>Нотатка</th></tr>
+    <tr><td>...</td><td>EUR/USD</td><td>CALL</td><td>1m</td><td>+</td><td>Відскок S/R</td></tr>
+  </table>
+
+  <p class="no-print"><a class="btn" href="javascript:history.back()">← Назад до бота</a></p>
+</body>
+</html>

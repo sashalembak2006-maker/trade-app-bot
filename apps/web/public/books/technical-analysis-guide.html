@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>Технічний аналіз — TRADE APP BOT</title>
+  <style>
+    @media print { .no-print { display: none; } }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1.5rem; background: #0a0a0c; color: #e8e4d9; line-height: 1.6; }
+    h1 { color: #d4af37; } h2 { color: #f5d76e; margin-top: 1.5rem; }
+    pre { background: #111; padding: 1rem; border-radius: 8px; font-size: 11px; overflow-x: auto; color: #a3e635; }
+    .btn { padding: 0.75rem 1.5rem; background: #d4af37; color: #000; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <button class="no-print btn" onclick="window.print()">📥 Зберегти як PDF</button>
+  <h1>Технічний аналіз — стислий курс</h1>
+
+  <h2>Тренд + структура (крипто приклад ETH)</h2>
+  <pre>
+    HH ─────●  Higher High (висхідний тренд)
+           ╱
+    HL ───●    Higher Low
+         ╱
+    LL ●       Пробій HL вниз = можлива зміна тренду → PUT
+  </pre>
+
+  <h2>RSI + рівні</h2>
+  <p>RSI &lt; 30 біля підтримки → зона для CALL. RSI &gt; 70 біля опору → зона для PUT.</p>
+
+  <h2>Патерн «Прапор» на M5</h2>
+  <pre>
+    │ Імпульс вгору
+    ├─┐─┐─┐  Консолідація (прапор)
+    └─┴─┴─┘
+    Пробій вгору + обсяг → CALL на 1–3 хв експірації
+  </pre>
+
+  <h2>Три екрани (адаптація Elder)</h2>
+  <ol>
+    <li>H1 — напрямок тренду</li>
+    <li>M15 — сигнал (MACD / RSI)</li>
+    <li>M1 — точний вхід у Mini App</li>
+  </ol>
+</body>
+</html>

@@ -5,6 +5,24 @@ import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
 import type { LearningArticle } from '../../types';
 
+function renderContent(text: string) {
+  return text.split('\n').map((line, i) => {
+    if (line.startsWith('━━━')) {
+      return (
+        <p key={i} className="mt-4 mb-2 text-xs font-bold uppercase tracking-wider text-prime-gold/90">
+          {line.replace(/━/g, '').trim()}
+        </p>
+      );
+    }
+    if (line.trim() === '') return <div key={i} className="h-2" />;
+    return (
+      <p key={i} className="text-sm leading-relaxed text-slate-300">
+        {line}
+      </p>
+    );
+  });
+}
+
 export function LearningSection() {
   const { language, selectedArticleId, setSelectedArticleId } = useAppStore();
   const t = useT(language);
@@ -26,11 +44,13 @@ export function LearningSection() {
             key={tb}
             type="button"
             onClick={() => setTab(tb)}
-            className={`flex-1 rounded-xl py-2 text-xs font-bold ${
-              tab === tb ? 'bg-neon-blue/20 text-neon-blue' : 'bg-white/5 text-slate-500'
+            className={`flex-1 rounded-xl py-2.5 text-xs font-bold transition-all ${
+              tab === tb
+                ? 'border border-prime-gold/40 bg-prime-gold/15 text-prime-gold-light'
+                : 'border border-white/5 bg-white/[0.04] text-slate-500'
             }`}
           >
-            {tb === 'basics' ? t.basics : t.books}
+            {tb === 'basics' ? `📖 ${t.basics}` : `📚 ${t.books}`}
           </button>
         ))}
       </div>
@@ -44,13 +64,16 @@ export function LearningSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
             onClick={() => setSelectedArticleId(a.id)}
-            className="flex w-full items-center justify-between rounded-2xl border border-white/5 bg-white/[0.04] p-4 text-left hover:border-neon-blue/20"
+            className="flex w-full items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.04] p-4 text-left transition-all hover:border-prime-gold/25 hover:bg-white/[0.06]"
           >
-            <div>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-prime-gold/10 text-xl">
+              {a.icon ?? (a.tab === 'books' ? '📕' : '📝')}
+            </span>
+            <div className="min-w-0 flex-1">
               <p className="font-semibold text-white">{language === 'uk' ? a.titleUk : a.titleEn}</p>
-              <p className="text-[10px] text-slate-500">⏱ {a.duration}</p>
+              <p className="text-[10px] text-slate-500">⏱ {a.duration}{a.guideUrl ? ' · PDF' : ''}</p>
             </div>
-            <span className="text-slate-600">›</span>
+            <span className="text-prime-gold/50">›</span>
           </motion.button>
         ))}
       </div>
@@ -61,7 +84,7 @@ export function LearningSection() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[90] flex items-end bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 z-[90] flex items-end bg-black/75 backdrop-blur-sm"
             onClick={() => setSelectedArticleId(null)}
           >
             <motion.div
@@ -69,14 +92,37 @@ export function LearningSection() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               onClick={(e) => e.stopPropagation()}
-              className="glass-strong max-h-[85vh] w-full overflow-y-auto rounded-t-[28px] p-6"
+              className="glass-strong max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] border-t border-prime-gold/20 p-6"
             >
-              <button type="button" onClick={() => setSelectedArticleId(null)} className="mb-4 text-slate-400">✕</button>
-              <h3 className="mb-4 text-xl font-bold text-white">
-                {language === 'uk' ? selected.titleUk : selected.titleEn}
-              </h3>
-              <div className="whitespace-pre-line text-sm leading-relaxed text-slate-300">
-                {language === 'uk' ? selected.contentUk : selected.contentEn}
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{selected.icon ?? '📖'}</span>
+                  <h3 className="text-lg font-bold text-white">
+                    {language === 'uk' ? selected.titleUk : selected.titleEn}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedArticleId(null)}
+                  className="rounded-full bg-white/10 px-3 py-1 text-slate-400"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {selected.guideUrl && (
+                <a
+                  href={selected.guideUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-gold mb-5 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm"
+                >
+                  📥 Відкрити PDF-гайд (зберегти через Друк)
+                </a>
+              )}
+
+              <div className="space-y-0.5">
+                {renderContent(language === 'uk' ? selected.contentUk : selected.contentEn)}
               </div>
             </motion.div>
           </motion.div>

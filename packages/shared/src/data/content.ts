@@ -22,9 +22,77 @@ export const INDICATORS: IndicatorInfo[] = [
 ];
 
 export const LEARNING: LearningArticle[] = [
-  { id: 'l1', titleUk: 'Основи трейдингу', titleEn: 'Trading Basics', tab: 'basics', duration: '10 хв', contentUk: 'Трейдинг — це купівля та продаж фінансових інструментів з метою отримання прибутку від зміни ціни.\n\nОсновні поняття:\n• Актив — інструмент для торгівлі (валюта, крипто, акція)\n• Експірація — час закінчення угоди\n• CALL — прогноз на зростання ціни\n• PUT — прогноз на падіння ціни\n• Payout — відсоток прибутку при правильному прогнозі\n\nПеред початком торгівлі важливо вивчити основи, розробити стратегію та навчитися управляти ризиками.', contentEn: 'Trading is buying and selling financial instruments to profit from price changes.\n\nKey concepts:\n• Asset — instrument to trade\n• Expiration — trade end time\n• CALL — price will go up\n• PUT — price will go down\n• Payout — profit percentage', },
-  { id: 'l2', titleUk: 'Ризик-менеджмент', titleEn: 'Risk Management', tab: 'basics', duration: '12 хв', contentUk: 'Ризик-менеджмент — найважливіша частина успішного трейдингу.\n\nПравила:\n1. Ризикуйте не більше 1-2% депозиту на угоду\n2. Використовуйте стоп-лосс (обмеження збитків)\n3. Не збільшуйте ставку після програшу (revenge trading)\n4. Ведіть торговий журнал\n5. Визначте максимальну денну просадку\n\nПам\'ятайте: збереження капіталу важливіше за швидкий прибуток.', contentEn: 'Risk management is the most important part of successful trading.\n\nRules:\n1. Risk max 1-2% per trade\n2. Use stop-loss\n3. No revenge trading\n4. Keep a trading journal\n5. Set max daily drawdown', },
-  { id: 'l3', titleUk: 'Основи аналізу', titleEn: 'Analysis Basics', tab: 'basics', duration: '15 хв', contentUk: 'Існує два типи аналізу:\n\nТехнічний аналіз:\n• Вивчення графіків та патернів\n• Індикатори (RSI, MACD, MA)\n• Рівні підтримки та опору\n\nФундаментальний аналіз:\n• Економічні новини\n• Звіти центробанків\n• Макроекономічні дані\n\nДля короткострокової торгівлі найбільш ефективний технічний аналіз.', contentEn: 'Two types of analysis:\n\nTechnical: charts, patterns, indicators\nFundamental: news, central bank reports, macro data', },
+  {
+    id: 'l1',
+    icon: '📚',
+    titleUk: 'Основи трейдингу',
+    titleEn: 'Trading Basics',
+    tab: 'basics',
+    duration: '12 хв',
+    contentUk:
+      'Трейдинг — купівля/продаж активів з метою прибутку від руху ціни.\n\n' +
+      '━━━ Ключові терміни ━━━\n' +
+      '• Актив — пара (EUR/USD), крипто (BTC), товар (GOLD)\n' +
+      '• Експірація — коли угода закривається\n' +
+      '• CALL ⬆️ — ціна піде вгору\n' +
+      '• PUT ⬇️ — ціна піде вниз\n' +
+      '• Payout — % прибутку (напр. 92%)\n\n' +
+      '━━━ Приклад угоди ━━━\n' +
+      'Депозит $200 → ставка $10 на EUR/USD CALL, експірація 1 хв.\n' +
+      'Якщо ціна вище входу через 1 хв → виграш ~$9.20 (при payout 92%).\n' +
+      'Якщо нижче → втрата $10.\n\n' +
+      '━━━ Крипто vs Форекс ━━━\n' +
+      'BTC/USDT рухається швидше за EUR/USD. На крипто краще експірація 1–5 хв з жорстким ризик-менеджментом.\n\n' +
+      'Перед стартом: оберіть 2–3 пари, ведіть журнал, не торгуйте на всю суму.',
+    contentEn: 'Trading basics: CALL/PUT, expiration, payout. Start with 2–3 pairs and a journal.',
+  },
+  {
+    id: 'l2',
+    icon: '🛡️',
+    titleUk: 'Ризик-менеджмент',
+    titleEn: 'Risk Management',
+    tab: 'basics',
+    duration: '15 хв',
+    guideUrl: '/books/risk-management-guide.html',
+    contentUk:
+      'Ризик-менеджмент — 80% успіху. Без нього навіть точні сигнали зливають депозит.\n\n' +
+      '━━━ Правило 1–2% ━━━\n' +
+      'Депозит $500 → макс. $5–10 на угоду. Ніколи «відігратися» подвійною ставкою без плану.\n\n' +
+      '━━━ Структура капіталу ━━━\n' +
+      '70% — торгівля | 20% — резерв (не чіпати) | 10% — навчання/тести\n\n' +
+      '━━━ Приклад: BTC після 3 програшів ━━━\n' +
+      '❌ Погано: $10 → $20 → $40 (мартингейл без ліміту)\n' +
+      '✅ Добре: стоп після 3 програшів, пауза 30 хв, аналіз журналу\n\n' +
+      '━━━ Денні ліміти ━━━\n' +
+      '• Макс. просадка 5%/день\n' +
+      '• Макс. 10 угод/день для початківців\n' +
+      '• Не торгувати під час важливих новин (NFP, FOMC)\n\n' +
+      '📥 Відкрийте повний PDF-гайд кнопкою нижче.',
+    contentEn: 'Risk 1–2% per trade, daily limits, no revenge trading. See printable guide.',
+  },
+  {
+    id: 'l3',
+    icon: '📊',
+    titleUk: 'Основи аналізу',
+    titleEn: 'Analysis Basics',
+    tab: 'basics',
+    duration: '18 хв',
+    guideUrl: '/books/technical-analysis-guide.html',
+    contentUk:
+      'Два підходи: технічний (графік) і фундаментальний (новини).\n\n' +
+      '━━━ Технічний аналіз ━━━\n' +
+      'Графік ETH/USDT:\n' +
+      '  $3540 ──╮  тренд вгору (Higher Highs)\n' +
+      '         ╱\n' +
+      '  $3520 ─●  Higher Low → зона для CALL\n\n' +
+      'Індикатори: RSI (перекуп/перепрод), MACD (імпульс), MA (тренд).\n\n' +
+      '━━━ Фундаментальний ━━━\n' +
+      '• Ставки ФРС → USD\n' +
+      '• Звіт по зайнятості (NFP) → волатильність\n' +
+      '• Лістинг ETF на BTC → різкі рухи крипто\n\n' +
+      'Для експірації 30с–5м: 70% техніка + 30% новини (не торгувати за 5 хв до новини).',
+    contentEn: 'Technical vs fundamental. For short expirations prioritize charts + avoid news spikes.',
+  },
   { id: 'l4', titleUk: 'Патерни', titleEn: 'Patterns', tab: 'basics', duration: '14 хв', contentUk: 'Графічні патерни допомагають передбачити рух ціни.\n\nРозворотні:\n• Голова і плечі\n• Подвійна вершина/дно\n• Молот / Повішений\n\nПродовження:\n• Прапор / Вимпел\n• Трикутник\n• Поглинання (Engulfing)\n\nПатерни працюють найкраще на старших таймфреймах з підтвердженням обсягом.', contentEn: 'Chart patterns help predict price movement.\n\nReversal: Head & Shoulders, Double Top/Bottom, Hammer\nContinuation: Flag, Pennant, Triangle, Engulfing', },
   { id: 'l5', titleUk: 'Імбаланс', titleEn: 'Imbalance', tab: 'basics', duration: '8 хв', contentUk: 'Імбаланс (Fair Value Gap) — це зона на графіку, де між свічками залишився "пробіл".\n\nЯк торгувати:\n1. Знайдіть FVG на графіку\n2. Дочекайтесь повернення ціни до зони\n3. Входьте в напрямку заповнення імбалансу\n\nFVG найефективніші на таймфреймах M5-M15.', contentEn: 'Fair Value Gap is a price gap between candles.\n\nHow to trade:\n1. Find FVG on chart\n2. Wait for price return\n3. Enter in fill direction', },
   { id: 'l6', titleUk: 'Підтримка', titleEn: 'Support', tab: 'basics', duration: '7 хв', contentUk: 'Підтримка — рівень, де ціна історично зупиняла падіння та розверталась вгору.\n\nЯк використовувати:\n• Шукайте відскок від підтримки для CALL\n• Чим більше разів ціна тестувала рівень — тим він сильніший\n• Пробій підтримки вниз — сигнал на PUT', contentEn: 'Support is a level where price historically stopped falling and reversed up.', },
@@ -71,10 +139,12 @@ export const LEARNING: LearningArticle[] = [
   },
   {
     id: 'b1',
+    icon: '🧠',
     titleUk: 'Книга: «Зона трейдингу» (Марк Дуглас)',
     titleEn: 'Book: Trading in the Zone (Mark Douglas)',
     tab: 'books',
     duration: '45 хв',
+    guideUrl: '/books/risk-management-guide.html',
     contentUk:
       'Класика психології трейдингу.\n\n' +
       'Головні ідеї:\n• Ринок — ймовірності, не гарантії\n• Страх і жадібність руйнують дисципліну\n' +
@@ -84,10 +154,12 @@ export const LEARNING: LearningArticle[] = [
   },
   {
     id: 'b2',
+    icon: '📈',
     titleUk: 'Книга: «Технічний аналіз» (Джон Мерфі)',
     titleEn: 'Book: Technical Analysis (John Murphy)',
     tab: 'books',
     duration: '60 хв',
+    guideUrl: '/books/technical-analysis-guide.html',
     contentUk:
       'Повний огляд технічного аналізу для початківців і практиків.\n\n' +
       'Теми: тренди, ковзні середні, обсяг, патерни, індикатори.\n' +

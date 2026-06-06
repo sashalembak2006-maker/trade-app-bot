@@ -354,22 +354,25 @@ export function SignalModal() {
 
           {signalPhase === 'idle' && (
             <>
-              <p className="mb-2 text-xs font-semibold text-slate-400">Експірація</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-prime-gold/80">Експірація</p>
               <div className="mb-5 flex flex-wrap gap-2">
-                {TIMEFRAMES.map((tf) => (
-                  <button
-                    key={tf}
-                    type="button"
-                    onClick={() => setSelectedTimeframe(tf)}
-                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-all ${
-                      selectedTimeframe === tf
-                        ? 'bg-neon-yellow text-black shadow-[0_0_15px_rgba(245,230,66,0.4)]'
-                        : 'bg-white/5 text-slate-400 hover:bg-white/10'
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
+                {TIMEFRAMES.map((tf) => {
+                  const active = selectedTimeframe === tf;
+                  return (
+                    <button
+                      key={tf}
+                      type="button"
+                      onClick={() => setSelectedTimeframe(tf)}
+                      className={`min-w-[2.75rem] rounded-xl border px-3 py-2.5 text-xs font-bold transition-all ${
+                        active
+                          ? 'border-prime-gold bg-prime-gold/20 text-prime-gold-light shadow-[0_0_16px_rgba(212,175,55,0.45)] ring-1 ring-prime-gold/60'
+                          : 'border-white/10 bg-white/[0.04] text-slate-400 hover:border-prime-gold/35 hover:text-slate-200'
+                      }`}
+                    >
+                      {tf}
+                    </button>
+                  );
+                })}
               </div>
 
               <motion.button
@@ -432,9 +435,9 @@ export function SignalModal() {
                   <p className="text-[10px] text-slate-500">{t.market}</p>
                   <p className="font-semibold text-white">{signalResult.market}</p>
                 </div>
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">{t.time}</p>
-                  <p className="font-semibold text-white">{signalResult.timeframe}</p>
+                <div className="rounded-xl border border-prime-gold/40 bg-prime-gold/15 p-3">
+                  <p className="text-[10px] text-prime-gold/70">{t.time}</p>
+                  <p className="font-bold text-prime-gold-light text-glow-gold">{signalResult.timeframe}</p>
                 </div>
                 <div className="rounded-xl bg-black/40 p-3">
                   <p className="text-[10px] text-slate-500">{t.entry}</p>

@@ -19,6 +19,7 @@ import {
 } from './provider.js';
 import { isPlausibleMarketPrice } from './price-validation.js';
 import { SyntheticPriceEngine } from './synthetic-price.js';
+import { resolveAssetFlags } from './asset-flags.js';
 
 let syntheticFallbackEnabled = true;
 
@@ -341,7 +342,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
             : null,
       payout: a.payout,
       change: a.change,
-      flags: ['🌐'],
+      flags: resolveAssetFlags(a.symbol),
       favorite: false,
     }));
   }

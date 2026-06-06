@@ -1,4 +1,5 @@
 import type { Asset, PriceUpdate } from '../types/index.js';
+import { resolveAssetFlags } from './asset-flags.js';
 import { DataSourceNotConfiguredError } from './provider.js';
 
 /** Quote from an official / approved Pocket Option data feed. */
@@ -79,7 +80,7 @@ export function pocketQuotesToAssets(quotes: PocketQuote[]): Asset[] {
     price: q.price,
     payout: q.payout,
     change: 0,
-    flags: ['🌐'],
+    flags: resolveAssetFlags(q.symbol),
     favorite: false,
   }));
 }

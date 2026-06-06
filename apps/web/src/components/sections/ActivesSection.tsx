@@ -5,6 +5,7 @@ import { useT } from '../../i18n/translations';
 import { api } from '../../services/api';
 import { formatPercentChange } from '../../utils/format';
 import type { AssetCategory } from '../../types';
+import { AssetIcon } from '../ui/AssetIcon';
 
 const CATEGORIES: (AssetCategory | 'favorite' | 'all')[] = [
   'all', 'forex', 'forex_otc', 'crypto', 'stocks', 'commodities', 'indices', 'favorite',
@@ -65,11 +66,10 @@ export function ActivesSection() {
               setSelectedAsset(a);
               void api.requestFocus(a.symbol, 90_000).catch(() => {});
             }}
-            className="flex w-full items-center justify-between rounded-2xl border border-white/5 bg-white/[0.04] p-3 text-left transition-all hover:border-neon-purple/20 hover:bg-white/[0.06]"
+            className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-gradient-to-r from-white/[0.05] to-transparent p-3 text-left transition-all hover:border-prime-gold/25 hover:from-prime-gold/[0.06]"
           >
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{a.flags[0]}</span>
-              {a.flags[1] && <span className="text-lg">{a.flags[1]}</span>}
+            <div className="flex items-center gap-3">
+              <AssetIcon flags={a.flags} />
               <div>
                 <p className="text-sm font-bold text-white">{a.symbol}</p>
                 <p className="text-[10px] text-slate-500">{catLabel(a.category as typeof activeCategory)}</p>

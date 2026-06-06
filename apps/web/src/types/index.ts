@@ -91,6 +91,8 @@ export interface LearningArticle {
   contentEn: string;
   tab: 'basics' | 'books';
   duration: string;
+  guideUrl?: string;
+  icon?: string;
 }
 
 export interface TradeSettlement {
