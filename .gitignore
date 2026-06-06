@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Secrets and local data — never commit
+.env
+.env.*
+!.env.example
+!.env.production.example
+apps/*/.env
+*.db
+.cursor/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

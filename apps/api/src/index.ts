@@ -1,0 +1,88 @@
+import 'dotenv/config';
+import { patchBigIntJson } from './utils/json.js';
+patchBigIntJson();
+import path from 'path';
+import { fileURLToPath } from 'url';
+import express from 'express';
+import cors from 'cors';
+import { createServer } from 'http';
+import routes from './routes.js';
+import { setupWebSocket } from './websocket.js';
+import { seedAdmin } from './services/admin-seed.js';
+import { log, requestLogger } from './logger.js';
+import { setBridgeSyntheticFallback } from '@trade-app/shared';
+import { getMarketStatus } from './market.js';
+import { startBridgeMonitor } from './services/bridge-status.js';
+
+const syntheticFallback =
+  process.env.PLATFORM_SYNTHETIC_FALLBACK === 'true' ||
+  (process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
+setBridgeSyntheticFallback(syntheticFallback);
+
+const PORT = Number(process.env.API_PORT ?? 3001);
+const app = express();
+const server = createServer(app);
+
+const isDev = process.env.NODE_ENV !== 'production';
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+      const allowed = (process.env.CORS_ORIGIN ?? '').split(',').map((o) => o.trim());
+      if (allowed.includes('*') || allowed.includes(origin)) return callback(null, true);
+      callback(null, false);
+    },
+    credentials: true,
+  }),
+);
+
+app.use(express.json());
+app.use(requestLogger);
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', app: 'PRIME TRADE BOT', market: getMarketStatus() });
+});
+
+app.use('/api', routes);
+
+// Production: serve built Mini App (set WEB_DIST_PATH or defaults to apps/web/dist)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const webDist = process.env.WEB_DIST_PATH
+  ? path.resolve(process.env.WEB_DIST_PATH)
+  : path.resolve(__dirname, '../../web/dist');
+if (process.env.NODE_ENV === 'production' || process.env.SERVE_WEB === 'true') {
+  app.use(express.static(webDist));
+  app.get(/^(?!\/api).*/, (_req, res) => {
+    res.sendFile(path.join(webDist, 'index.html'));
+  });
+  log.info('Serving Mini App static files', { webDist });
+}
+
+// Last-resort error handler — never leak stack traces, always JSON.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  log.error('Unhandled API error', err instanceof Error ? err.message : err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR' });
+});
+
+setupWebSocket(server);
+
+process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection', reason));
+process.on('uncaughtException', (err) => log.error('Uncaught exception', err.message));
+
+// Bridge cache survives restart — data rebuilds from incoming extension/collector pushes.
+startBridgeMonitor();
+
+seedAdmin()
+  .catch((e) => log.error('Admin seed failed', e instanceof Error ? e.message : e))
+  .finally(() => {
+    server.listen(PORT, '0.0.0.0', () => {
+      log.info(`PRIME TRADE BOT API: http://127.0.0.1:${PORT}`);
+      log.info(`WebSocket: ws://127.0.0.1:${PORT}/ws`);
+      log.info('Market data source', getMarketStatus());
+    });
+  });

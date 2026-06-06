@@ -1,0 +1,33 @@
+{
+  "name": "@trade-app/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push --accept-data-loss"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "@trade-app/shared": "*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "bcryptjs": "^3.0.2",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.29",
+    "@types/ws": "^8.18.1",
+    "prisma": "^6.9.0",
+    "tsx": "^4.19.4",
+    "typescript": "~5.8.3"
+  }
+}

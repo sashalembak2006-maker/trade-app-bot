@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Platform Bridge</title>
+    <style>
+      body { width: 320px; margin: 0; padding: 16px; font-family: system-ui, sans-serif; background: #0b0b0f; color: #f5f5f5; }
+      h1 { font-size: 15px; margin: 0 0 4px; color: #e7c873; }
+      p.sub { font-size: 11px; color: #888; margin: 0 0 14px; }
+      label { display: block; font-size: 11px; color: #aaa; margin: 10px 0 4px; }
+      input { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 8px; border: 1px solid #333; background: #16161c; color: #fff; font-size: 13px; }
+      button { width: 100%; margin-top: 14px; padding: 10px; border: none; border-radius: 8px; background: #e7c873; color: #000; font-weight: 700; font-size: 13px; cursor: pointer; }
+      .status { margin-top: 12px; font-size: 12px; padding: 10px; border-radius: 8px; background: #16161c; }
+      .status.ok { color: #9fd69f; }
+      .status.bad { color: #f0a0a0; }
+      .status.warn { color: #e7c873; }
+      .row { display: flex; justify-content: space-between; font-size: 11px; margin-top: 6px; color: #aaa; }
+      .row span { color: #fff; font-weight: 600; max-width: 180px; text-align: right; word-break: break-word; }
+      .hint { margin-top: 8px; font-size: 10px; color: #888; line-height: 1.4; }
+    </style>
+  </head>
+  <body>
+    <h1>PRIME TRADE BOT — Bridge</h1>
+    <p class="sub">Читає price і payout з Pocket Option і надсилає на backend.</p>
+
+    <label for="backendUrl">Backend URL</label>
+    <input id="backendUrl" type="text" placeholder="http://localhost:3001" />
+
+    <label for="secret">Bridge Secret</label>
+    <input id="secret" type="text" placeholder="dev-secret" />
+
+    <button id="save">Зберегти</button>
+    <button id="test" style="margin-top:8px;background:#333;color:#fff">Перевірити backend</button>
+    <button id="copyBinary" style="margin-top:8px;background:#1a3a2a;color:#9fd69f;font-size:12px">Copy Binary Debug</button>
+
+    <div class="status" id="statusBox">
+      <div id="status">Status: …</div>
+      <div class="row">Page: <span id="pageHost">—</span></div>
+      <div class="row">Scraped: <span id="scrapeCount">—</span></div>
+      <div class="row">Last asset: <span id="lastAsset">—</span></div>
+      <div class="row">Last price: <span id="lastPrice">—</span></div>
+      <div class="row">Last payout: <span id="lastPayout">—</span></div>
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

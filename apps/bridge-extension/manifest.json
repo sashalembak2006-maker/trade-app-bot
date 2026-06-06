@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "PRIME TRADE BOT — Platform Bridge",
+  "version": "1.6.8",
+  "description": "Reads live asset symbol, price and payout from Pocket Option WebSocket + page and forwards to PRIME TRADE BOT backend.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:3001/*",
+    "http://127.0.0.1:3001/*",
+    "https://pocketoption.com/*",
+    "https://*.pocketoption.com/*",
+    "https://po.trade/*",
+    "https://*.po.trade/*",
+    "https://po.market/*",
+    "https://*.po.market/*",
+    "https://po.site/*",
+    "https://*.po.site/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "web_accessible_resources": [
+    {
+      "resources": ["page-hook.js", "binary-decoder.js"],
+      "matches": [
+        "https://pocketoption.com/*",
+        "https://*.pocketoption.com/*",
+        "https://po.trade/*",
+        "https://*.po.trade/*",
+        "https://po.market/*",
+        "https://*.po.market/*",
+        "https://po.site/*",
+        "https://*.po.site/*"
+      ]
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Platform Bridge" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pocketoption.com/*",
+        "https://*.pocketoption.com/*",
+        "https://po.trade/*",
+        "https://*.po.trade/*",
+        "https://po.market/*",
+        "https://*.po.market/*",
+        "https://po.site/*",
+        "https://*.po.site/*"
+      ],
+      "js": ["binary-decoder.js", "page-hook.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://pocketoption.com/*",
+        "https://*.pocketoption.com/*",
+        "https://po.trade/*",
+        "https://*.po.trade/*",
+        "https://po.market/*",
+        "https://*.po.market/*",
+        "https://po.site/*",
+        "https://*.po.site/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

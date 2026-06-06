@@ -1,27 +1,27 @@
 {
   "name": "trade-app-bot",
   "private": true,
-  "version": "1.0.0",
-  "type": "module",
+  "version": "3.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "dev": "npm run dev -w @trade-app/web",
+    "server": "npm run dev -w @trade-app/api",
+    "bot": "npm run dev -w @trade-app/bot",
+    "collector": "npm run dev -w @trade-app/collector",
+    "build": "npm run build -w @trade-app/shared && npm run build -w @trade-app/api && npm run build -w @trade-app/bot && npm run build -w @trade-app/collector && npm run build -w @trade-app/web",
+    "typecheck": "npm run build -w @trade-app/shared && npm run typecheck -w @trade-app/api && npm run typecheck -w @trade-app/bot && npm run typecheck -w @trade-app/collector && npm run typecheck -w @trade-app/web",
+    "lint": "npm run typecheck",
+    "start:prod": "pm2 start ecosystem.config.cjs && pm2 save",
+    "stop:prod": "pm2 delete prime-api prime-bot prime-web prime-collector || true",
+    "verify:prod": "bash scripts/verify-production.sh",
+    "db:push": "npm run db:push -w @trade-app/api",
+    "db:generate": "npm run db:generate -w @trade-app/api",
+    "postinstall": "npm run db:generate"
   },
-  "dependencies": {
-    "@twa-dev/sdk": "^8.0.2",
-    "framer-motion": "^12.15.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.1.8",
-    "@types/react": "^19.1.6",
-    "@types/react-dom": "^19.1.5",
-    "@vitejs/plugin-react": "^4.5.1",
-    "tailwindcss": "^4.1.8",
-    "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+  "engines": {
+    "node": ">=20"
   }
 }

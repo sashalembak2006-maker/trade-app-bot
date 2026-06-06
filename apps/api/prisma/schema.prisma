@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 Int              @id @default(autoincrement())
+  telegramId         BigInt           @unique
+  username           String?
+  firstName          String?
+  lastName           String?
+  platformAccountId  String?
+  referralCode       String?
+  status             String           @default("guest")
+  accessLevel        String           @default("none")
+  depositAmount      Float            @default(0)
+  isDepositConfirmed Boolean          @default(false)
+  isVip              Boolean          @default(false)
+  isInvited          Boolean          @default(false)
+  isBanned           Boolean          @default(false)
+  adminNote          String?
+  language           String           @default("uk")
+  notifySignal       Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @default(now()) @updatedAt
+  lastActiveAt       DateTime         @default(now())
+  depositRequests    DepositRequest[]
+  signals            SignalHistory[]
+}
+
+model DepositRequest {
+  id        String    @id @default(uuid())
+  userId    Int
+  amount    Float     @default(0)
+  status    String    @default("pending")
+  proofText String?
+  createdAt DateTime  @default(now())
+  reviewedAt DateTime?
+  reviewedBy String?
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+model SignalHistory {
+  id          String   @id @default(uuid())
+  userId      Int
+  assetSymbol String
+  direction   String
+  timeframe   String
+  entryPrice  Float
+  confidence  Float
+  payout      Float
+  market      String   @default("MARKET")
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Admin {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}

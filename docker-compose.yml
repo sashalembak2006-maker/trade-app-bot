@@ -1,0 +1,68 @@
+# PRIME TRADE BOT — production stack (Ubuntu VPS)
+# Usage:
+#   cp .env.production.example apps/api/.env && nano apps/api/.env
+#   cp apps/api/.env apps/bot/.env && cp apps/api/.env apps/collector/.env
+#   # Fill PO_WS_URL + PO_AUTH_MESSAGE in apps/collector/.env
+#   docker compose up -d --build
+#
+# Prefer PM2 on a bare VPS? Use ./start-production.sh instead (lighter, no Docker).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    restart: unless-stopped
+    env_file: apps/api/.env
+    volumes:
+      - api-data:/app/apps/api/prisma
+    ports:
+      - "127.0.0.1:3001:3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bot
+    restart: unless-stopped
+    env_file: apps/bot/.env
+    depends_on:
+      api:
+        condition: service_healthy
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: collector
+    restart: unless-stopped
+    env_file: apps/collector/.env
+    depends_on:
+      api:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/prime-trade.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-certs:/etc/letsencrypt:ro
+    depends_on:
+      - api
+    profiles:
+      - with-nginx
+
+volumes:
+  api-data:
+  certbot-www:
+  certbot-certs:
