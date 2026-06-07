@@ -12,39 +12,43 @@ const router = Router();
  * Auth: shared secret via `x-bridge-secret` header (BRIDGE_SECRET).
  */
 router.post('/assets/update', (req, res) => {
-  const secret = process.env.BRIDGE_SECRET;
-  if (!secret) {
-    return res.status(503).json({ error: 'BRIDGE_SECRET not configured on server' });
-  }
-  if (req.headers['x-bridge-secret'] !== secret) {
-    log.warn('Bridge update rejected: bad secret');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  try {
+    const secret = process.env.BRIDGE_SECRET;
+    if (!secret) {
+      return res.status(503).json({ error: 'BRIDGE_SECRET not configured on server' });
+    }
+    if (req.headers['x-bridge-secret'] !== secret) {
+      log.warn('Bridge update rejected: bad secret');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
-  const assets = Array.isArray(req.body?.assets) ? (req.body.assets as BridgeAssetInput[]) : [];
-  if (assets.length === 0) {
-    return res.status(400).json({ error: 'No assets provided' });
-  }
+    const assets = Array.isArray(req.body?.assets) ? (req.body.assets as BridgeAssetInput[]) : [];
+    if (assets.length === 0) {
+      return res.status(400).json({ error: 'No assets provided' });
+    }
 
-  const activeSymbol =
-    typeof req.body?.activeSymbol === 'string' && req.body.activeSymbol.trim()
-      ? req.body.activeSymbol.trim()
-      : null;
+    const activeSymbol =
+      typeof req.body?.activeSymbol === 'string' && req.body.activeSymbol.trim()
+        ? req.body.activeSymbol.trim()
+        : null;
 
-  const bridge = getBridgeProvider();
-  const accepted = bridge.ingest(assets, activeSymbol);
-  const sanitized = bridge.sanitize();
-  if (sanitized > 0) {
-    log.warn('Bridge sanitized corrupted prices', { sanitized });
+    const bridge = getBridgeProvider();
+    const accepted = bridge.ingest(assets, activeSymbol);
+    const sanitized = bridge.sanitize();
+    if (sanitized > 0) {
+      log.warn('Bridge sanitized corrupted prices', { sanitized });
+    }
+    if (accepted > 0 && getMarketMode() !== 'platform') {
+      setMarketMode('platform');
+      log.info('Bridge connected — switched market mode to platform');
+    }
+    if (accepted > 0) onBridgeIngest(accepted);
+    log.debug('Bridge data ingested', { accepted, source: req.body?.source, assetCount: assets.length });
+    return res.json({ ok: true, accepted, status: bridge.status });
+  } catch (err) {
+    log.error('Bridge ingest failed', err instanceof Error ? err.message : err);
+    return res.status(500).json({ error: 'Bridge ingest failed', code: 'BRIDGE_INGEST_ERROR' });
   }
-  if (accepted > 0 && getMarketMode() !== 'platform') {
-    setMarketMode('platform');
-    log.info('Bridge connected — switched market mode to platform');
-  }
-  if (accepted > 0) onBridgeIngest(accepted);
-  if (accepted > 0) bridge.pulseSubscribers();
-  log.debug('Bridge data ingested', { accepted, source: req.body?.source });
-  res.json({ ok: true, accepted, status: bridge.status });
 });
 
 router.get('/status', (_req, res) => {

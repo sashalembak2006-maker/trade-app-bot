@@ -164,7 +164,11 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         if (!a) continue;
         const price = this.displayPrice(a);
         if (price == null) continue;
-        l.cb({ symbol, price, payout: a.payout, change: a.change, ts: now });
+        try {
+          l.cb({ symbol, price, payout: a.payout, change: a.change, ts: now });
+        } catch {
+          /* WS / subscriber errors must not break bridge POST */
+        }
       }
     }
   }
@@ -350,7 +354,12 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
 
   private emit(update: PriceUpdate) {
     for (const l of this.listeners) {
-      if (l.symbols.has(update.symbol)) l.cb(update);
+      if (!l.symbols.has(update.symbol)) continue;
+      try {
+        l.cb(update);
+      } catch {
+        /* subscriber errors must not break ingest */
+      }
     }
   }
 
