@@ -86,7 +86,7 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
   }, [setAssets, setMarketStatus]);
 
-  // Poll market status + assets every second (WS + REST for Telegram WebView).
+  // Poll assets + status every 150ms (Telegram WebView — WS can be flaky).
   useEffect(() => {
     const reloadAssets = () => {
       api
@@ -98,15 +98,8 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
         .catch(() => { /* keep last assets */ });
     };
 
-    const id = setInterval(() => {
-      api
-        .getMarketStatus()
-        .then((s) => {
-          setMarketStatus(s);
-          if (s.mode === 'live' && s.configured) reloadAssets();
-        })
-        .catch(() => { /* keep last status */ });
-    }, 250);
+    reloadAssets();
+    const id = setInterval(reloadAssets, 150);
     return () => clearInterval(id);
   }, [setMarketStatus, setAssets]);
 

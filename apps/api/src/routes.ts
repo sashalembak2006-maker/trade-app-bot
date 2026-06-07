@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { isBridgeSyntheticFallbackEnabled } from '@trade-app/shared';
 import userRoutes from './routes/user.js';
 import adminRoutes from './routes/admin.js';
 import bridgeRoutes from './routes/bridge.js';
@@ -21,6 +22,7 @@ router.get('/market/status', (_req, res) => {
   res.json({
     ...status,
     activeMode: getMarketMode(),
+    hybridPrices: isBridgeSyntheticFallbackEnabled(),
     bridgeConnected: bridge.connected,
     bridgeStale: bridge.stale,
     bridgeLastUpdate: bridge.lastUpdate,

@@ -121,7 +121,60 @@
   let tickTimer = null;
   let lastLogKey = '';
   const wsAssets = new Map();
+  const lastKnownPrices = new Map();
   let wsActiveSymbol = null;
+
+  function rememberPrice(symbol, price, payout) {
+    const p = sanitizeWsPrice(price, symbol, payout);
+    if (p != null) lastKnownPrices.set(symbol, p);
+  }
+
+  /** Plausible base when PO has payout only (anchored hybrid — not random each tick). */
+  function seededBasePrice(symbol) {
+    const s = String(symbol || '').toUpperCase();
+    let hash = 0;
+    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+    const r = (Math.abs(hash) % 10_000) / 10_000;
+    if (/BTC/.test(s)) return 60_000 + r * 8_000;
+    if (/ETH/.test(s)) return 2_800 + r * 400;
+    if (/JPY/.test(s)) return 145 + r * 18;
+    if (/GOLD|XAU/.test(s)) return 2_300 + r * 120;
+    return 0.45 + r * 1.8;
+  }
+
+  /** Micro-tick ALL catalog prices before POST — Mini App sees live movement without backend redeploy. */
+  function pulseCatalogPrices(activeSymbol) {
+    const now = Date.now();
+    const WS_LIVE_MS = 3000;
+    for (const [symbol, entry] of wsAssets) {
+      if (!symbol || typeof entry?.payout !== 'number') continue;
+      const isActive = activeSymbol && symbolsMatch(symbol, activeSymbol);
+      const wsFresh =
+        entry.live === true &&
+        entry.timestamp != null &&
+        now - entry.timestamp <= WS_LIVE_MS;
+      if (isActive && wsFresh) continue;
+      let base = lastKnownPrices.get(symbol) ?? entry.price;
+      if (base == null) {
+        base = seededBasePrice(symbol);
+        lastKnownPrices.set(symbol, base);
+      }
+      const delta = (Math.random() - 0.5) * base * 0.004;
+      let next = Math.round((base + delta) * 100_000) / 100_000;
+      if (!isValidPrice(symbol, next, entry.payout)) next = base;
+      lastKnownPrices.set(symbol, next);
+      wsAssets.set(
+        symbol,
+        withCategory({
+          ...entry,
+          symbol,
+          price: next,
+          live: false,
+          timestamp: now,
+        }),
+      );
+    }
+  }
 
   function withCategory(a) {
     if (!a?.symbol) return a;
@@ -438,13 +491,16 @@
         if (!a?.symbol || typeof a.payout !== 'number' || a.payout < 1 || a.payout > 100) continue;
         const prev = wsAssets.get(a.symbol);
         wsAssets.set(a.symbol, withCategory({
-          ...prev,
           symbol: a.symbol,
           payout: a.payout,
+          price: prev?.price,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
         }));
+        if (!lastKnownPrices.has(a.symbol) && prev?.price != null) {
+          rememberPrice(a.symbol, prev.price, a.payout);
+        }
       }
     }
     if (ev.data.type === 'stream' && typeof ev.data.price === 'number') {
@@ -457,7 +513,13 @@
       if (p == null) return;
       const prev = wsAssets.get(sym) || { symbol: sym, payout: 92, isOTC: /otc/i.test(sym) };
       wsActiveSymbol = sym;
-      wsAssets.set(sym, { ...prev, price: p, timestamp: ev.data.timestamp || Date.now() });
+      wsAssets.set(sym, {
+        ...prev,
+        price: p,
+        live: true,
+        timestamp: ev.data.timestamp || Date.now(),
+      });
+      rememberPrice(sym, p, prev.payout);
     }
     if (ev.data.type === 'active' && ev.data.symbol) {
       wsActiveSymbol = ev.data.symbol;
@@ -697,18 +759,41 @@
     return null;
   }
 
+  function findPayoutInRow(row) {
+    for (const sel of [
+      '.value__val--profit',
+      '.alist__payout',
+      '.assets-block__payout',
+      '[class*="payout"]',
+      '[class*="profit"]',
+    ]) {
+      const el = row.querySelector(sel);
+      if (!el) continue;
+      const n = parsePayout(el.textContent || '');
+      if (n != null) return n;
+    }
+    return parsePayout(row.textContent || '');
+  }
+
   function parseListRow(row) {
     const symbol = findSymbolInRow(row);
     if (!symbol) return null;
-    const payout = parsePayout(row.textContent || '');
+    const payout = findPayoutInRow(row);
     if (!isValidPayout(payout)) return null;
 
-    return withCategory({
+    const payload = withCategory({
       symbol,
       payout,
       isOTC: /otc/i.test(symbol),
       timestamp: Date.now(),
     });
+    const price = findPriceInRow(row, symbol, payout);
+    if (price != null) {
+      payload.price = price;
+      payload.live = true;
+      rememberPrice(symbol, price, payout);
+    }
+    return payload;
   }
 
   function scrapeList() {
@@ -809,7 +894,10 @@
       isOTC: /otc/i.test(symbol),
       timestamp: Date.now(),
     });
-    if (price != null) payload.price = price;
+    if (price != null) {
+      payload.price = price;
+      rememberPrice(symbol, price, payout);
+    }
     return payload;
   }
 
@@ -976,20 +1064,45 @@
           wsEntry?.timestamp != null && Date.now() - wsEntry.timestamp <= WS_PRICE_TTL_MS;
         const wsPrice =
           wsEntry?.price != null ? sanitizeWsPrice(wsEntry.price, row.symbol, row.payout) : null;
-        const keepPrice =
-          row.symbol === activeSymbol || (wsPrice != null && wsFresh);
-        if (!keepPrice) {
-          delete row.price;
-          return row;
+        let price = null;
+
+        if (row.symbol === activeSymbol || (wsPrice != null && wsFresh)) {
+          const raw =
+            row.price != null ? sanitizeWsPrice(row.price, row.symbol, row.payout) : wsPrice;
+          if (raw != null) price = raw;
+        } else {
+          if (row.price != null) {
+            const scraped = sanitizeWsPrice(row.price, row.symbol, row.payout);
+            if (scraped != null) price = scraped;
+          }
+          if (price == null && wsPrice != null) price = wsPrice;
+          if (price == null && lastKnownPrices.has(row.symbol)) {
+            const lkp = lastKnownPrices.get(row.symbol);
+            if (isValidPrice(row.symbol, lkp, row.payout)) price = lkp;
+          }
         }
-        const raw = row.price != null ? sanitizeWsPrice(row.price, row.symbol, row.payout) : wsPrice;
-        if (raw != null) row.price = raw;
-        else delete row.price;
+
+        if (price != null) {
+          rememberPrice(row.symbol, price, row.payout);
+          row.price = price;
+          if (
+            row.symbol === activeSymbol ||
+            (wsEntry?.live === true && wsFresh)
+          ) {
+            row.live = true;
+          }
+        } else {
+          delete row.price;
+          delete row.live;
+        }
         return row;
       });
   }
 
   function buildBatch() {
+    const list = scrapeList();
+    const activeSymbol = resolveActiveSymbol(list);
+    syncDomAndWsCatalog();
     const bySymbol = new Map();
 
     for (const a of wsAssets.values()) {
@@ -1002,11 +1115,13 @@
         timestamp: a.timestamp ?? Date.now(),
       });
       const p = sanitizeWsPrice(a.price, a.symbol, a.payout);
-      if (p != null) entry.price = p;
+      if (p != null) {
+        entry.price = p;
+        if (a.live === true) entry.live = true;
+      }
       bySymbol.set(a.symbol, entry);
     }
 
-    const list = scrapeList();
     for (const a of list) {
       const prev = bySymbol.get(a.symbol);
       bySymbol.set(a.symbol, withCategory({
@@ -1016,10 +1131,11 @@
         isOTC: a.isOTC ?? prev?.isOTC ?? /otc/i.test(a.symbol),
         category: a.category ?? prev?.category,
         timestamp: a.timestamp ?? prev?.timestamp ?? Date.now(),
+        price: a.price ?? prev?.price,
+        live: a.live === true ? true : prev?.live,
       }));
     }
 
-    const activeSymbol = resolveActiveSymbol(list);
     let activePayload = null;
 
     if (activeSymbol) {
@@ -1039,7 +1155,11 @@
           timestamp: Date.now(),
         });
         const price = resolveActivePrice(activeSymbol, payout);
-        if (price != null) activePayload.price = price;
+        if (price != null) {
+          activePayload.price = price;
+          activePayload.live = true;
+          rememberPrice(activeSymbol, price, payout);
+        }
         bySymbol.set(activeSymbol, { ...prev, ...activePayload });
       }
     }
@@ -1127,12 +1247,14 @@
   function syncDomAndWsCatalog() {
     for (const a of scrapeList()) {
       const prev = wsAssets.get(a.symbol);
+      if (a.price != null) rememberPrice(a.symbol, a.price, a.payout ?? prev?.payout);
       wsAssets.set(
         a.symbol,
         withCategory({
           ...prev,
           ...a,
           payout: a.payout ?? prev?.payout,
+          price: a.price ?? prev?.price,
           category: a.category ?? prev?.category,
           timestamp: Date.now(),
         }),
@@ -1350,24 +1472,32 @@
 
   function tryFocusSymbol(targetSymbol) {
     if (!targetSymbol) return false;
-    const rows = new Set();
-    for (const sel of LIST_ROW_SELECTORS) {
-      document.querySelectorAll(sel).forEach((r) => rows.add(r));
-    }
-    document
-      .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="assets-list"]')
-      .forEach((container) => {
-        container.querySelectorAll('[class*="item"], li, a, button').forEach((r) => rows.add(r));
-      });
-    for (const row of rows) {
-      const sym = findSymbolInRow(row);
-      if (sym && symbolsMatch(sym, targetSymbol)) {
-        row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        if (typeof row.click === 'function') row.click();
-        console.log('[PRIME Bridge] focus click →', sym);
-        return true;
+    ensureAssetCatalogOpen();
+    const attempt = () => {
+      const rows = new Set();
+      for (const sel of LIST_ROW_SELECTORS) {
+        document.querySelectorAll(sel).forEach((r) => rows.add(r));
       }
-    }
+      document
+        .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="assets-list"]')
+        .forEach((container) => {
+          container.querySelectorAll('[class*="item"], li, a, button').forEach((r) => rows.add(r));
+        });
+      for (const row of rows) {
+        const sym = findSymbolInRow(row);
+        if (sym && symbolsMatch(sym, targetSymbol)) {
+          row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          if (typeof row.click === 'function') row.click();
+          wsActiveSymbol = sym;
+          console.log('[PRIME Bridge] focus click →', sym);
+          setTimeout(tick, 300);
+          return true;
+        }
+      }
+      return false;
+    };
+    if (attempt()) return true;
+    setTimeout(attempt, 900);
     return false;
   }
 

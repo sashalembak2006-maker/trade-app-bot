@@ -2,10 +2,11 @@
 /** Shared Railway POST client — single lock, compact payload, debounced errors. */
 const BridgeHttp = (() => {
   const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: '9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5' };
-  const TIMEOUT_MS = 8000;
-  const MIN_POST_GAP_MS = 180;
+  const TIMEOUT_MS = 5000;
+  const MIN_POST_GAP_MS = 100;
   const LOCK_KEY = 'bridgePostLock';
-  const SUCCESS_GRACE_MS = 30000;
+  const SUCCESS_GRACE_MS = 45000;
+  const POST_OK_WINDOW_MS = 25000;
 
   function normalizeBackendUrl(raw) {
     let b = (raw || '').trim().replace(/\/$/, '');
@@ -85,11 +86,15 @@ const BridgeHttp = (() => {
   async function acquirePostLock(owner) {
     const now = Date.now();
     const bag = await chrome.storage.local.get([LOCK_KEY, 'lastPostSuccessAt', 'lastPostAttemptAt']);
-    const lock = bag[LOCK_KEY];
+    let lock = bag[LOCK_KEY];
+    if (lock && lock.until <= now) {
+      await chrome.storage.local.remove(LOCK_KEY);
+      lock = null;
+    }
     if (lock && lock.until > now && lock.owner !== owner) return false;
     if (bag.lastPostAttemptAt && now - bag.lastPostAttemptAt < MIN_POST_GAP_MS) return false;
     await chrome.storage.local.set({
-      [LOCK_KEY]: { owner, until: now + TIMEOUT_MS + 2000 },
+      [LOCK_KEY]: { owner, until: now + TIMEOUT_MS + 500 },
       lastPostAttemptAt: now,
     });
     return true;
@@ -248,7 +253,11 @@ const BridgeHttp = (() => {
 
     try {
       const result = await postBridgeUpdate(merged, 'browser-extension-relay', owner);
-      if (result.skipped) return;
+      if (result.skipped) {
+        const bag = await chrome.storage.local.get(['lastPostSuccessAt']);
+        if (bag.lastPostSuccessAt && Date.now() - bag.lastPostSuccessAt < POST_OK_WINDOW_MS) return;
+        return;
+      }
       await markPostResult(result, merged.assets.length);
     } catch (e) {
       await markPostError(`${e.message} — ${owner}`);
@@ -263,5 +272,6 @@ const BridgeHttp = (() => {
     markPostError,
     getMergedFromBackground,
     runRelayTick,
+    POST_OK_WINDOW_MS,
   };
 })();

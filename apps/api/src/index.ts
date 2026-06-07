@@ -11,14 +11,20 @@ import routes from './routes.js';
 import { setupWebSocket } from './websocket.js';
 import { seedAdmin } from './services/admin-seed.js';
 import { log, requestLogger } from './logger.js';
-import { setBridgeSyntheticFallback } from '@trade-app/shared';
+import { setBridgeSyntheticFallback, setBridgeAnchoredPulse } from '@trade-app/shared';
 import { getMarketStatus } from './market.js';
 import { startBridgeMonitor } from './services/bridge-status.js';
 
-const syntheticFallback =
-  process.env.PLATFORM_SYNTHETIC_FALLBACK === 'true' ||
-  (process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
+/** Hybrid prices on by default; set PLATFORM_SYNTHETIC_FALLBACK=false to disable. */
+const syntheticFallback = process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false';
 setBridgeSyntheticFallback(syntheticFallback);
+
+const anchoredPulse =
+  process.env.BRIDGE_ANCHORED_PULSE === 'true' ||
+  (process.env.BRIDGE_ANCHORED_PULSE !== 'false' &&
+    process.env.NODE_ENV === 'production' &&
+    !syntheticFallback);
+setBridgeAnchoredPulse(anchoredPulse);
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const app = express();
@@ -55,18 +61,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDist = process.env.WEB_DIST_PATH
   ? path.resolve(process.env.WEB_DIST_PATH)
   : path.resolve(__dirname, '../../web/dist');
+const indexHtml = path.join(webDist, 'index.html');
+
 if (process.env.NODE_ENV === 'production' || process.env.SERVE_WEB === 'true') {
-  const indexHtml = path.join(webDist, 'index.html');
   if (fs.existsSync(indexHtml)) {
-    app.use(express.static(webDist));
-    app.get(/^(?!\/api).*/, (_req, res, next) => {
-      res.sendFile(indexHtml, (err) => {
-        if (err) next(err);
+    app.use(express.static(webDist, { index: false }));
+    app.get(/^(?!\/api).*/, (_req, res) => {
+      res.sendFile(path.resolve(indexHtml), (err) => {
+        if (err) {
+          log.error('Mini App sendFile failed', { webDist, err: err.message });
+          res.status(503).json({
+            error: 'Mini App static files unavailable',
+            code: 'WEB_DIST_ERROR',
+            webDist,
+          });
+        }
       });
     });
     log.info('Serving Mini App static files', { webDist });
   } else {
     log.warn('Mini App dist missing — static routes disabled', { webDist, indexHtml });
+    app.get(/^(?!\/api).*/, (_req, res) => {
+      res.status(503).json({
+        error: 'Mini App not built — run web build or set WEB_DIST_PATH=/app/apps/web/dist',
+        code: 'WEB_DIST_MISSING',
+        webDist,
+      });
+    });
   }
 }
 

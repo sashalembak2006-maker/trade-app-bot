@@ -27,14 +27,38 @@ export function LearningSection() {
   const { language, selectedArticleId, setSelectedArticleId } = useAppStore();
   const t = useT(language);
   const [articles, setArticles] = useState<LearningArticle[]>([]);
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'basics' | 'books'>('basics');
 
   useEffect(() => {
-    api.getLearning().then(setArticles).catch(() => setArticles([]));
+    setLoading(true);
+    api
+      .getLearning()
+      .then(setArticles)
+      .catch(async () => {
+        try {
+          const res = await fetch('/content-fallback.json');
+          if (res.ok) {
+            const data = (await res.json()) as { learning?: LearningArticle[] };
+            setArticles(data.learning ?? []);
+          }
+        } catch {
+          setArticles([]);
+        }
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const filtered = articles.filter((a) => a.tab === tab);
   const selected = articles.find((a) => a.id === selectedArticleId);
+
+  if (loading) {
+    return <p className="py-6 text-center text-sm text-slate-500">{t.contentLoading}</p>;
+  }
+
+  if (articles.length === 0) {
+    return <p className="py-6 text-center text-sm text-slate-500">{t.contentEmpty}</p>;
+  }
 
   return (
     <>

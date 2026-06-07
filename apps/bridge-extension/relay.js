@@ -1,5 +1,5 @@
 /* eslint-disable */
-const TICK_MS = 200;
-
-setInterval(() => BridgeHttp.runRelayTick('relay'), TICK_MS);
-BridgeHttp.runRelayTick('relay');
+/** Keep relay tab alive; POST runs in service worker (background.js). */
+setInterval(() => {
+  chrome.runtime.sendMessage({ type: 'bridge-keepalive' }).catch(() => {});
+}, 2000);

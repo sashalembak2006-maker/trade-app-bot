@@ -90,7 +90,7 @@ export function ActivesSection() {
                   <p className="text-[10px] text-slate-600">{t.priceOnSignalStart}</p>
                 )}
                 <p className="text-xs font-bold text-neon-yellow">{a.payout}%</p>
-                {a.price != null && (
+                {(a.price != null || a.lastKnownPrice != null) && (
                   <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
                     {formatPercentChange(a.change)}
                   </p>

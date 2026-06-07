@@ -36,6 +36,19 @@ export function nextMartingaleMultiplier(current: MartingaleMultiplier): Marting
   return null;
 }
 
+/** Overlay attempt number shown in UI (0 = initial signal, 1–2 = перекриття). */
+export function overlayNumberFromMultiplier(multiplier: MartingaleMultiplier): number {
+  if (multiplier === 2) return 1;
+  if (multiplier === 4) return 2;
+  return 0;
+}
+
+export function deriveRiskLevel(confidence: number, payout: number): 'low' | 'medium' | 'high' {
+  if (confidence >= 85 && payout >= 75) return 'low';
+  if (confidence >= 72) return 'medium';
+  return 'high';
+}
+
 export function timeframeToMs(tf: string): number {
   const map: Record<string, number> = {
     '3s': 3000, '5s': 5000, '15s': 15000, '30s': 30000,

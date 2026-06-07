@@ -1,4 +1,6 @@
 /* eslint-disable */
+importScripts('bridge-http.js');
+
 const DEFAULTS = {
   backendUrl: 'https://prime-trade-production.up.railway.app',
   secret: '9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5',
@@ -15,8 +17,8 @@ let lastPostedAt = 0;
 let fetchFailStreak = 0;
 let lastPostSuccessAt = 0;
 
-/** Target ~250ms POST cadence — live prices without stale bridge heartbeat. */
-const POST_INTERVAL_MS = 250;
+/** Target ~120ms POST cadence — all pairs update in Mini App within 0.1–0.2s. */
+const POST_INTERVAL_MS = 120;
 const OFFSCREEN_URL = 'offscreen.html';
 const pendingOffscreenFetches = new Map();
 let offscreenPort = null;
@@ -373,6 +375,12 @@ async function flushAndPost() {
     }
     ensureRelayTab().catch(() => {});
   }
+
+  try {
+    await BridgeHttp.runRelayTick('service-worker');
+  } catch {
+    /* relay tick handles storage status */
+  }
 }
 
 async function pingBackend() {
@@ -644,6 +652,11 @@ async function pollFocus() {
 
 setInterval(pollFocus, 3000);
 syncRelayWithPoTabs().catch(() => {});
+
+/** Service worker POST loop — do not rely on relay tab (throttled when hidden). */
+setInterval(() => {
+  BridgeHttp.runRelayTick('service-worker').catch(() => {});
+}, POST_INTERVAL_MS);
 
 if (chrome.alarms) {
   chrome.alarms.create('bridge-keepalive', { periodInMinutes: 0.5 });

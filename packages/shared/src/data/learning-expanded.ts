@@ -294,4 +294,119 @@ export const LEARNING_EXPANDED: LearningArticle[] = [
       '📥 Графічний гайд у PDF.',
     contentEn: 'Candlestick patterns for short expirations. Confirm with 2–3 candles.',
   },
+  {
+    id: 'l11',
+    icon: '🎯',
+    titleUk: 'Основи Pocket Option',
+    titleEn: 'Pocket Option Basics',
+    tab: 'basics',
+    duration: '10 хв',
+    contentUk:
+      'Pocket Option — платформа для бінарних опціонів з фіксованою експірацією.\n\n' +
+      '━━━ Інтерфейс ━━━\n' +
+      '• Графік + актив зліва\n' +
+      '• Сума ставки + CALL/PUT\n' +
+      '• Експірація (30с – 4 год)\n' +
+      '• Payout % біля пари\n\n' +
+      '━━━ Demo ━━━\n' +
+      'Починайте з demo-quick-high-low. Prime Trade Bridge читає ціни з цієї вкладки.\n\n' +
+      '━━━ Порада ━━━\n' +
+      'Оберіть 2–3 пари і вивчіть їх поведінку перед live.',
+    contentEn: 'Pocket Option UI basics. Start on demo, learn 2–3 pairs first.',
+  },
+  {
+    id: 'l12',
+    icon: '⚡',
+    titleUk: 'Як працюють бінарні опціони',
+    titleEn: 'How Binary Options Work',
+    tab: 'basics',
+    duration: '12 хв',
+    contentUk:
+      'Бінарна опція — прогноз напрямку ціни до моменту експірації.\n\n' +
+      '━━━ CALL / PUT ━━━\n' +
+      'CALL — ціна вища за вхід → виграш\n' +
+      'PUT — ціна нижча → виграш\n\n' +
+      '━━━ Payout ━━━\n' +
+      'Ставка $10, payout 92% → прибуток ~$9.20\n\n' +
+      '━━━ Ризик ━━━\n' +
+      'При програші втрачаєте всю ставку. Тому 1–2% від депозиту на угоду.',
+    contentEn: 'Binary options: predict direction by expiry. Fixed payout, fixed risk.',
+  },
+  {
+    id: 'l13',
+    icon: '🌙',
+    titleUk: 'Що таке OTC',
+    titleEn: 'What is OTC',
+    tab: 'basics',
+    duration: '8 хв',
+    contentUk:
+      'OTC (Over-The-Counter) — пари, що торгуються поза основною біржею, часто 24/7.\n\n' +
+      '━━━ Особливості ━━━\n' +
+      '• Вища волатильність\n' +
+      '• Payout часто 90%+\n' +
+      '• Ціни від брокера, не міжбанк\n\n' +
+      '━━━ Prime Trade ━━━\n' +
+      'Bridge зчитує OTC ціни з Pocket Option — те саме, що бачите на платформі.\n\n' +
+      '━━━ Ризик ━━━\n' +
+      'Коротша експірація (1–3 хв) на OTC часто стабільніша ніж 30с.',
+    contentEn: 'OTC pairs trade 24/7 with broker quotes. Higher volatility, often higher payout.',
+  },
+  {
+    id: 'l14',
+    icon: '📈',
+    titleUk: 'Тренди',
+    titleEn: 'Trends',
+    tab: 'basics',
+    duration: '11 хв',
+    contentUk:
+      'Тренд — домінуючий напрямок ціни.\n\n' +
+      '━━━ Види ━━━\n' +
+      '• Висхідний — Higher Highs / Higher Lows\n' +
+      '• Нисхідний — Lower Highs / Lower Lows\n' +
+      '• Флет — боковик\n\n' +
+      '━━━ Правило ━━━\n' +
+      'Торгуйте за трендом, не проти.\n\n' +
+      '━━━ Приклад ━━━\n' +
+      'EUR/USD H1 вгору → на M1 шукайте CALL на відкатах.',
+    contentEn: 'Trade with the trend. Uptrend = CALL bias on pullbacks.',
+  },
+  {
+    id: 'l15',
+    icon: '🧠',
+    titleUk: 'Психологія трейдингу',
+    titleEn: 'Trading Psychology',
+    tab: 'basics',
+    duration: '14 хв',
+    contentUk:
+      'Емоції — головний ворог трейдера.\n\n' +
+      '━━━ Типові помилки ━━━\n' +
+      '• Revenge trading після програшу\n' +
+      '• FOMO — вхід без сигналу\n' +
+      '• Overtrading — 50 угод на день\n\n' +
+      '━━━ Антидот ━━━\n' +
+      'План, журнал, ліміт 5–10 угод/день.\n\n' +
+      '━━━ Перекриття ━━━\n' +
+      'Максимум 2 перекриття по боту — потім пауза.',
+    contentEn: 'Control emotions. Journal trades, limit daily count, respect max 2 coverages.',
+  },
+  {
+    id: 'l16',
+    icon: '⚠️',
+    titleUk: 'Типові помилки новачків',
+    titleEn: 'Beginner Mistakes',
+    tab: 'basics',
+    duration: '10 хв',
+    contentUk:
+      '━━━ Топ-7 помилок ━━━\n' +
+      '1. Ставка >5% депозиту\n' +
+      '2. Торгівля без сигналу\n' +
+      '3. 30с експірація на новинах\n' +
+      '4. Ігнор payout <60%\n' +
+      '5. Мартингейл без ліміту\n' +
+      '6. 10+ пар одночасно\n' +
+      '7. Немає demo-практики\n\n' +
+      '━━━ Рішення ━━━\n' +
+      'Prime Trade Bot дає структурований сигнал + перекриття max ×2.',
+    contentEn: 'Avoid oversizing, overtrading, and unlimited martingale.',
+  },
 ];

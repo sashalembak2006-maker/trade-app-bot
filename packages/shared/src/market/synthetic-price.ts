@@ -39,9 +39,16 @@ export class SyntheticPriceEngine {
     return this.prices.get(symbol) ?? this.seed(symbol);
   }
 
-  tick(symbol: string): number {
-    const cur = this.get(symbol);
-    const delta = (Math.random() - 0.5) * cur * 0.0012;
+  /** Returns anchored price only — never seeds. */
+  getAnchored(symbol: string): number | null {
+    const p = this.prices.get(symbol);
+    return p != null && Number.isFinite(p) && p > 0 ? p : null;
+  }
+
+  tick(symbol: string): number | null {
+    const cur = this.prices.get(symbol);
+    if (cur == null || !Number.isFinite(cur) || cur <= 0) return null;
+    const delta = (Math.random() - 0.5) * cur * 0.0025;
     const next = Math.round((cur + delta) * 100_000) / 100_000;
     this.prices.set(symbol, next);
     return next;

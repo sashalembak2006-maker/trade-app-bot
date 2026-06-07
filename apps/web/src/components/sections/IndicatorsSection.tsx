@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
+import { useT } from '../../i18n/translations';
 import type { IndicatorInfo } from '../../types';
 
 function renderContent(text: string) {
@@ -24,13 +25,38 @@ function renderContent(text: string) {
 
 export function IndicatorsSection() {
   const { language, selectedIndicatorId, setSelectedIndicatorId } = useAppStore();
+  const t = useT(language);
   const [indicators, setIndicators] = useState<IndicatorInfo[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getIndicators().then(setIndicators).catch(() => setIndicators([]));
+    setLoading(true);
+    api
+      .getIndicators()
+      .then(setIndicators)
+      .catch(async () => {
+        try {
+          const res = await fetch('/content-fallback.json');
+          if (res.ok) {
+            const data = (await res.json()) as { indicators?: IndicatorInfo[] };
+            setIndicators(data.indicators ?? []);
+          }
+        } catch {
+          setIndicators([]);
+        }
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const selected = indicators.find((i) => i.id === selectedIndicatorId);
+
+  if (loading) {
+    return <p className="py-6 text-center text-sm text-slate-500">{t.contentLoading}</p>;
+  }
+
+  if (indicators.length === 0) {
+    return <p className="py-6 text-center text-sm text-slate-500">{t.contentEmpty}</p>;
+  }
 
   return (
     <>
@@ -101,7 +127,7 @@ export function IndicatorsSection() {
                   <img
                     src={selected.imageUrl}
                     alt={language === 'uk' ? selected.nameUk : selected.nameEn}
-                    className="w-full object-contain"
+                    className="w-full max-h-64 object-contain p-4"
                   />
                 </div>
               )}

@@ -69,7 +69,10 @@ export interface NewsItem {
   summary: string;
   category: string;
   date: string;
+  time?: string;
   source: string;
+  body?: string;
+  imageUrl?: string;
 }
 
 export interface IndicatorInfo {

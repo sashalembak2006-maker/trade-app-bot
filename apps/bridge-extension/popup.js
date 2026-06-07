@@ -30,9 +30,11 @@ async function renderLive() {
     'lastFrame', 'lastScrapeCount',
   ]);
 
-  const heartbeatOk = isRecent(data.lastHeartbeatAt, 12000);
-  const postOk = isRecent(data.lastPostSuccessAt, 12000);
+  const heartbeatOk = isRecent(data.lastHeartbeatAt, 15000);
   const scrapeOk = (data.lastScrapeCount ?? 0) >= 1;
+  const postOk =
+    isRecent(data.lastPostSuccessAt, BridgeHttp.POST_OK_WINDOW_MS ?? 25000) ||
+    (isRecent(data.lastPostSuccessAt, 45000) && heartbeatOk && scrapeOk);
 
   const box = $('statusBox');
   let statusText = 'Status: Not connected';

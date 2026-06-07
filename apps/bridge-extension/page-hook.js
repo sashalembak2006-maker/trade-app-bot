@@ -500,7 +500,7 @@
 
     if (arr[0] === 'changeSymbol' && arr[1]?.asset) {
       activeAsset = poSymbolToDisplay(String(arr[1].asset));
-      post('active', { symbol: activeAsset, clearPrices: true });
+      post('active', { symbol: activeAsset });
     }
   }
 
@@ -584,14 +584,14 @@
     });
     on('updateStream', (data) => {
       if (!isPlaceholder(data)) {
-        const tick = parseStreamTick(data, activeAsset);
-        if (tick) emitStreamTick(tick);
+        const ticks = parseStreamTicks(data, activeAsset);
+        for (const tick of ticks) emitStreamTick(tick);
       }
     });
     on('changeSymbol', (data) => {
       if (data?.asset) {
         activeAsset = poSymbolToDisplay(String(data.asset));
-        post('active', { symbol: activeAsset, clearPrices: true });
+        post('active', { symbol: activeAsset });
       }
     });
   }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
@@ -7,9 +7,17 @@ import { logger } from '../../services/logger';
 import { hapticFeedback, hapticSuccess } from '../../services/telegram';
 import { useTelegram } from '../../hooks/useTelegram';
 import { useCountdown } from '../../hooks/useCountdown';
-import { nextMartingaleMultiplier, settleSignal, timeframeToMs } from '../../utils/signal-settlement';
+import {
+  deriveRiskLevel,
+  nextMartingaleMultiplier,
+  overlayNumberFromMultiplier,
+  settleSignal,
+  timeframeToMs,
+} from '../../utils/signal-settlement';
+import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
+const ANALYSIS_MIN_MS = 4000;
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -27,6 +35,7 @@ export function SignalModal() {
   const t = useT(language);
   useTelegram();
   const settledRef = useRef(false);
+  const [loadingTitle, setLoadingTitle] = useState('');
 
   const liveAsset =
     selectedAsset &&
@@ -136,16 +145,18 @@ export function SignalModal() {
 
   useEffect(() => {
     if (signalPhase !== 'loading') return;
-    const steps = t.loading.length;
+    const steps = t.loading;
     let step = 0;
     setLoadingStep(0);
+    setLoadingTitle(t.analyzingMarket);
     const interval = setInterval(() => {
+      if (step < steps.length) setLoadingTitle(steps[step] ?? t.analyzingMarket);
       step++;
       setLoadingStep(step);
-      if (step >= steps) clearInterval(interval);
-    }, 700);
+      if (step >= steps.length) clearInterval(interval);
+    }, 800);
     return () => clearInterval(interval);
-  }, [signalPhase, setLoadingStep, t.loading.length]);
+  }, [signalPhase, setLoadingStep, t.loading, t.analyzingMarket]);
 
   const dataSourceBlocked =
     !!signalError &&
@@ -174,11 +185,19 @@ export function SignalModal() {
     void handleGetSignal();
   };
 
-  const handleGetSignal = async () => {
+  const runAnalysisAnimation = () =>
+    new Promise<void>((resolve) => {
+      setSignalPhase('loading');
+      setLoadingStep(0);
+      setLoadingTitle(t.analyzingMarket);
+      setTimeout(resolve, ANALYSIS_MIN_MS);
+    });
+
+  const handleGetSignal = async (opts?: { keepMultiplier?: boolean }) => {
     if (!selectedAsset) return;
 
     if (!accessStatus?.hasAppAccess) {
-      setSignalError('Потрібен підтверджений депозит. Зареєструйтесь у боті та дочекайтесь доступу.');
+      setSignalError(t.noSignalAccess);
       return;
     }
 
@@ -189,25 +208,22 @@ export function SignalModal() {
 
     hapticFeedback('medium');
     setSignalError(null);
-    setSignalPhase('loading');
     setSignalResult(null);
     setSettlement(null);
-    setMartingaleMultiplier(1);
+    if (!opts?.keepMultiplier) setMartingaleMultiplier(1);
     settledRef.current = false;
     useAppStore.setState({ signalCurrentPrice: null });
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
 
+    await runAnalysisAnimation();
+
     try {
-      // API waits up to ~12s for bridge focus + live tick; loader runs in parallel.
-      const [, result] = await Promise.all([
-        new Promise((r) => setTimeout(r, 2800)),
-        api.generateSignal({
-          assetId: selectedAsset.id,
-          symbol: selectedAsset.symbol,
-          timeframe: selectedTimeframe,
-          isOTC: selectedAsset.isOTC,
-        }),
-      ]);
+      const result = await api.generateSignal({
+        assetId: selectedAsset.id,
+        symbol: selectedAsset.symbol,
+        timeframe: selectedTimeframe,
+        isOTC: selectedAsset.isOTC,
+      });
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
@@ -226,14 +242,16 @@ export function SignalModal() {
               ? t.errorTimeout
               : err.code === 'NETWORK'
                 ? t.errorNetwork
-                : err.message || t.errorSignal;
+                : err.code === 'NO_ACCESS'
+                  ? t.noSignalAccess
+                  : err.message || t.errorSignal;
       setSignalError(msg);
       setSignalPhase('idle');
       hapticFeedback('heavy');
     }
   };
 
-  const handleMartingaleRetry = () => {
+  const handleMartingaleRetry = async () => {
     if (!signalResult || !selectedAsset) return;
     const next = nextMartingaleMultiplier(martingaleMultiplier);
     if (!next) return;
@@ -242,13 +260,52 @@ export function SignalModal() {
     setMartingaleMultiplier(next);
     setSettlement(null);
     settledRef.current = false;
-    void handleGetSignal();
+    useAppStore.setState({ signalCurrentPrice: null });
+
+    await runAnalysisAnimation();
+
+    try {
+      void api.requestFocus(selectedAsset.symbol, 45_000).catch(() => {});
+      let entryPrice = signalResult.entryPrice;
+      try {
+        const live = await api.getLivePrice(selectedAsset.symbol, 2500);
+        if (live.price != null) entryPrice = live.price;
+      } catch {
+        const tick = useAppStore.getState().signalCurrentPrice;
+        if (tick != null) entryPrice = tick;
+      }
+
+      const durationMs = timeframeToMs(selectedTimeframe);
+      const expiresAt = new Date(Date.now() + durationMs).toISOString();
+      beginSignalResult({
+        ...signalResult,
+        id: `sig_${Date.now()}_cov${overlayNumberFromMultiplier(next)}`,
+        entryPrice,
+        expiresAt,
+        createdAt: new Date().toISOString(),
+      });
+      void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
+      hapticSuccess();
+      logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`);
+    } catch (e) {
+      logger.error('Signal', 'coverage failed', e);
+      setSignalPhase('settled');
+      setSignalError(t.errorSignal);
+    }
   };
 
   if (!selectedAsset || !liveAsset) return null;
 
   const isCall = signalResult?.direction === 'CALL';
   const nextMultiplier = nextMartingaleMultiplier(martingaleMultiplier);
+  const overlayNum = overlayNumberFromMultiplier(martingaleMultiplier);
+  const overlayLabel =
+    overlayNum === 1 ? t.coverageOverlay1 : overlayNum === 2 ? t.coverageOverlay2 : null;
+  const riskLevel = signalResult
+    ? deriveRiskLevel(signalResult.confidence, signalResult.payout)
+    : null;
+  const riskLabel =
+    riskLevel === 'low' ? t.riskLow : riskLevel === 'medium' ? t.riskMedium : t.riskHigh;
 
   return (
     <AnimatePresence>
@@ -320,9 +377,9 @@ export function SignalModal() {
             </div>
           )}
 
-          {martingaleMultiplier > 1 && signalPhase === 'result' && (
+          {overlayLabel && (signalPhase === 'result' || signalPhase === 'settled') && (
             <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-300">
-              {t.coverage}: <span className="font-bold">×{martingaleMultiplier}</span>
+              {overlayLabel} · <span className="font-bold">×{martingaleMultiplier}</span>
             </div>
           )}
 
@@ -354,7 +411,7 @@ export function SignalModal() {
 
           {signalPhase === 'idle' && (
             <>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-prime-gold/80">Експірація</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-prime-gold/80">{t.expiration}</p>
               <div className="mb-5 flex flex-wrap gap-2">
                 {TIMEFRAMES.map((tf) => {
                   const active = selectedTimeframe === tf;
@@ -379,7 +436,7 @@ export function SignalModal() {
                 type="button"
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={handleGetSignal}
+                onClick={() => void handleGetSignal()}
                 className="btn-gold w-full rounded-2xl py-4 text-center text-sm"
               >
                 {t.getSignal}
@@ -388,24 +445,11 @@ export function SignalModal() {
           )}
 
           {signalPhase === 'loading' && (
-            <div className="py-8 text-center">
-              <motion.div
-                className="mx-auto mb-6 h-16 w-16 rounded-full border-4 border-neon-purple/30 border-t-neon-purple"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-              />
-              <p className="mb-4 text-xs text-prime-gold">{t.fetchingLivePrice}</p>
-              {t.loading.map((step, i) => (
-                <motion.p
-                  key={step}
-                  initial={{ opacity: 0.3 }}
-                  animate={{ opacity: i <= loadingStep ? 1 : 0.3 }}
-                  className={`mb-2 text-sm font-semibold ${i <= loadingStep ? 'text-neon-purple' : 'text-slate-600'}`}
-                >
-                  {i <= loadingStep ? '✓ ' : '○ '}{step}
-                </motion.p>
-              ))}
-            </div>
+            <SignalAnalysisLoader
+              steps={[...t.loading]}
+              activeStep={Math.min(loadingStep, t.loading.length - 1)}
+              title={loadingTitle || t.analyzingMarket}
+            />
           )}
 
           {signalPhase === 'result' && signalResult && (
@@ -444,8 +488,20 @@ export function SignalModal() {
                   <p className="font-semibold text-neon-blue">{formatPrice(signalResult.entryPrice)}</p>
                 </div>
                 <div className="rounded-xl bg-black/40 p-3">
+                  <p className="text-[10px] text-slate-500">{t.riskLevel}</p>
+                  <p className={`font-semibold ${
+                    riskLevel === 'low' ? 'text-neon-green' : riskLevel === 'medium' ? 'text-neon-yellow' : 'text-red-400'
+                  }`}>
+                    {riskLabel}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-black/40 p-3">
                   <p className="text-[10px] text-slate-500">{t.confidence}</p>
                   <p className="font-semibold text-neon-purple">{signalResult.confidence}%</p>
+                </div>
+                <div className="rounded-xl bg-black/40 p-3">
+                  <p className="text-[10px] text-slate-500">RSI</p>
+                  <p className="font-semibold text-white">{signalResult.indicators.rsi}</p>
                 </div>
               </div>
 
@@ -471,7 +527,7 @@ export function SignalModal() {
                   {formatPrice(signalCurrentPrice ?? signalResult.entryPrice)}
                 </motion.p>
                 <p className="mt-1 text-[10px] text-slate-600">
-                  {t.entry}: {formatPrice(signalResult.entryPrice)} · live з PO
+                  {t.entry}: {formatPrice(signalResult.entryPrice)} · {t.liveFromPo}
                 </p>
               </div>
 
@@ -487,18 +543,19 @@ export function SignalModal() {
                     ✓
                   </div>
                   <h3 className="text-2xl font-bold text-neon-green text-glow-green">{t.tradeWon}</h3>
-                  {martingaleMultiplier > 1 && (
+                  {overlayLabel && (
                     <p className="mt-2 text-sm text-emerald-300">
-                      {t.coverage} ×{martingaleMultiplier} — успішно
+                      {overlayLabel} — {t.successCoverage}
                     </p>
                   )}
                 </div>
               ) : settlement.outcome === 'undetermined' ? (
                 <div className="mb-4 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/20 to-amber-900/20 p-6 text-center">
                   <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500 text-3xl text-black">
-                    ?
+                    =
                   </div>
-                  <h3 className="text-lg font-bold text-amber-300">{t.resultUndetermined}</h3>
+                  <h3 className="text-2xl font-bold text-amber-300">{t.tradeDraw}</h3>
+                  <p className="mt-2 text-xs text-slate-400">{t.resultUndetermined}</p>
                 </div>
               ) : (
                 <div className="mb-4 rounded-2xl border border-red-500/40 bg-gradient-to-br from-red-500/20 to-red-900/20 p-6 text-center">
@@ -510,7 +567,7 @@ export function SignalModal() {
                     <p className="mt-3 text-sm text-slate-400">{t.martingaleHint}</p>
                   )}
                   {!nextMultiplier && (
-                    <p className="mt-3 text-sm text-slate-400">{t.martingaleFinal}</p>
+                    <p className="mt-3 text-sm text-slate-400">{t.stopTradingAsset}</p>
                   )}
                 </div>
               )}
@@ -542,10 +599,10 @@ export function SignalModal() {
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.98 }}
-                  onClick={handleMartingaleRetry}
+                  onClick={() => void handleMartingaleRetry()}
                   className="btn-gold mb-3 w-full rounded-2xl py-4 text-sm font-bold"
                 >
-                  🔄 {t.repeatTrade} — {nextMultiplier === 2 ? t.martingaleX2 : t.martingaleX4}
+                  🔄 {t.getCoverage} — {nextMultiplier === 2 ? t.coverageOverlay1 : t.coverageOverlay2}
                 </motion.button>
               )}
 

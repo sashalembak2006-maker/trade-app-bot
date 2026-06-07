@@ -23,6 +23,7 @@ import { resolveAssetFlags } from './asset-flags.js';
 import { normalizeAssetCategory, resolveAssetCategory } from './asset-category.js';
 
 let syntheticFallbackEnabled = true;
+let anchoredPulseEnabled = false;
 
 /** API sets this from PLATFORM_SYNTHETIC_FALLBACK env (default on in dev). */
 export function setBridgeSyntheticFallback(enabled: boolean): void {
@@ -33,12 +34,23 @@ export function isBridgeSyntheticFallbackEnabled(): boolean {
   return syntheticFallbackEnabled;
 }
 
+/** Real lastKnownPrice micro-ticks only — no random seed (production default). */
+export function setBridgeAnchoredPulse(enabled: boolean): void {
+  anchoredPulseEnabled = enabled;
+}
+
+export function isBridgeAnchoredPulseEnabled(): boolean {
+  return anchoredPulseEnabled;
+}
+
 interface StoredAsset {
   symbol: string;
   price: number | null;
   /** Last real tick — kept even when live stream stops. */
   lastKnownPrice: number | null;
   priceUpdatedAt: number;
+  /** Last real PO/bridge tick (never set by synthetic). */
+  bridgeLiveAt: number;
   payout: number;
   change: number;
   category: AssetCategory;
@@ -54,8 +66,8 @@ interface Listener {
 /** Bridge/collector should stay connected if POSTs pause briefly. */
 const HEARTBEAT_STALE_MS = 45_000;
 const PRICE_STALE_MS = 12_000;
-/** Non-active pairs: micro-ticks for Mini App list (≈1/s). */
-const SYNTHETIC_TICK_MS = 50;
+/** Non-active pairs: micro-ticks for Mini App list (~10/s). */
+const SYNTHETIC_TICK_MS = 100;
 
 function roundChangePct(raw: number): number {
   if (!Number.isFinite(raw)) return 0;
@@ -72,6 +84,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   private lastUpdate = 0;
   private readonly synthetic = new SyntheticPriceEngine();
   private syntheticTimer: ReturnType<typeof setInterval> | null = null;
+  private anchoredPulseTimer: ReturnType<typeof setInterval> | null = null;
   private usingSynthetic = false;
 
   get status(): MarketDataStatus {
@@ -91,15 +104,9 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     };
   }
 
+  /** Real PO prices only — never synthetic ticks in API/WS display. */
   private displayPrice(a: StoredAsset): number | null {
-    if (this.isLive(a) && a.price != null) return a.price;
-    if (syntheticFallbackEnabled) {
-      if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
-        if (!this.synthetic.has(a.symbol)) this.synthetic.anchor(a.symbol, a.lastKnownPrice);
-        return this.synthetic.get(a.symbol);
-      }
-      return this.synthetic.get(a.symbol);
-    }
+    if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
     if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
       return a.lastKnownPrice;
     }
@@ -107,14 +114,27 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   }
 
   private applySynthetic(symbol: string): number {
-    const price = this.synthetic.seed(symbol);
     const prev = this.assets.get(symbol);
     const now = Date.now();
+    let price: number;
+    if (
+      prev?.lastKnownPrice != null &&
+      isPlausibleMarketPrice(prev.lastKnownPrice, symbol)
+    ) {
+      if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, prev.lastKnownPrice);
+      price = this.synthetic.tick(symbol) ?? prev.lastKnownPrice;
+    } else {
+      price = this.synthetic.seed(symbol);
+    }
     const stored: StoredAsset = {
       symbol,
       price,
-      lastKnownPrice: price,
+      lastKnownPrice:
+        prev?.lastKnownPrice != null && isPlausibleMarketPrice(prev.lastKnownPrice, symbol)
+          ? prev.lastKnownPrice
+          : price,
       priceUpdatedAt: now,
+      bridgeLiveAt: prev?.bridgeLiveAt ?? 0,
       payout: prev?.payout ?? 92,
       change: prev?.change ?? 0,
       category: prev?.category ?? resolveAssetCategory(symbol),
@@ -128,17 +148,60 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     return price;
   }
 
+  private tickSyntheticSymbol(symbol: string, a: StoredAsset, now: number): StoredAsset {
+    if (this.isBridgeLive(a)) return a;
+    // Fresh hybrid price from bridge POST (extension catalog pulse) — do not overwrite.
+    if (
+      a.price != null &&
+      isPlausibleMarketPrice(a.price, symbol) &&
+      a.priceUpdatedAt > 0 &&
+      now - a.priceUpdatedAt < 250
+    ) {
+      return a;
+    }
+    if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, symbol)) {
+      if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, a.lastKnownPrice);
+    } else if (!this.synthetic.has(symbol)) {
+      this.synthetic.seed(symbol);
+    }
+    let price = this.synthetic.tick(symbol);
+    if (price == null) price = this.synthetic.get(symbol);
+    const prev = a.price ?? a.lastKnownPrice ?? price;
+    let change = a.change;
+    if (prev != null && prev > 0 && price !== prev) {
+      change = roundChangePct(((price - prev) / prev) * 100);
+    }
+    const next: StoredAsset = {
+      ...a,
+      price,
+      priceUpdatedAt: now,
+      change,
+    };
+    this.assets.set(symbol, next);
+    this.usingSynthetic = true;
+    this.emit({ symbol, price, payout: next.payout, change, ts: now });
+    return next;
+  }
+
+  /** Disabled — synthetic must not overwrite stored PO prices shown to users. */
+  private refreshAllSyntheticPrices(): void {
+    return;
+  }
   private ensureSyntheticTimer(): void {
-    if (this.syntheticTimer || !syntheticFallbackEnabled) return;
-    this.syntheticTimer = setInterval(() => {
+    return;
+  }
+
+  private ensureAnchoredPulseTimer(): void {
+    if (this.anchoredPulseTimer || !anchoredPulseEnabled || syntheticFallbackEnabled) return;
+    this.anchoredPulseTimer = setInterval(() => {
       if (this.assets.size === 0) return;
       const now = Date.now();
       for (const [symbol, a] of this.assets) {
-        if (this.isLive(a)) continue;
-        if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, symbol)) {
-          if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, a.lastKnownPrice);
-        }
+        if (this.isBridgeLive(a)) continue;
+        if (a.lastKnownPrice == null || !isPlausibleMarketPrice(a.lastKnownPrice, symbol)) continue;
+        if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, a.lastKnownPrice);
         const price = this.synthetic.tick(symbol);
+        if (price == null) continue;
         const prev = a.price ?? a.lastKnownPrice;
         let change = a.change;
         if (prev != null && prev > 0 && price !== prev) {
@@ -148,7 +211,6 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         a.priceUpdatedAt = now;
         a.change = change;
         this.assets.set(symbol, a);
-        this.usingSynthetic = true;
         this.emit({ symbol, price, payout: a.payout, change, ts: now });
       }
     }, SYNTHETIC_TICK_MS);
@@ -175,15 +237,15 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
 
   hasLivePrice(symbol: string): boolean {
     const a = this.assets.get(symbol);
-    return !!a && this.isLive(a);
+    return !!a && this.isBridgeLive(a);
+  }
+
+  private isBridgeLive(a: StoredAsset): boolean {
+    return a.bridgeLiveAt > 0 && Date.now() - a.bridgeLiveAt <= PRICE_STALE_MS;
   }
 
   private isLive(a: StoredAsset): boolean {
-    return (
-      a.price != null &&
-      a.priceUpdatedAt > 0 &&
-      Date.now() - a.priceUpdatedAt <= PRICE_STALE_MS
-    );
+    return this.isBridgeLive(a);
   }
 
   /**
@@ -200,6 +262,10 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     const immediate = this.assets.get(symbol);
     if (immediate && this.isLive(immediate) && immediate.price != null) {
       return immediate.price;
+    }
+    if (allowSynthetic && syntheticFallbackEnabled && immediate) {
+      const display = this.displayPrice(immediate);
+      if (display != null) return display;
     }
 
     return new Promise((resolve, reject) => {
@@ -261,13 +327,17 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         prev?.price != null && isPlausibleMarketPrice(prev.price, a.symbol) ? prev.price : null;
 
       const isFocused = normalizedActive != null && a.symbol === normalizedActive;
+      const isLiveTick = validPrice != null && (a.live === true || isFocused);
       let priceUpdatedAt = prev?.priceUpdatedAt ?? 0;
+      let bridgeLiveAt = prev?.bridgeLiveAt ?? 0;
       if (validPrice) {
         priceUpdatedAt = a.timestamp ?? now;
+        if (isLiveTick) bridgeLiveAt = now;
         this.synthetic.anchor(a.symbol, validPrice);
       } else if (isFocused && prevLive != null) {
         // Active pair heartbeat without a new tick — keep previous live price fresh.
         priceUpdatedAt = now;
+        bridgeLiveAt = now;
       }
 
       const effectivePrice = validPrice ?? prevLive;
@@ -277,11 +347,15 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         change = roundChangePct(((validPrice - prevForChange) / prevForChange) * 100);
       }
 
+      const nextLastKnown = validPrice ?? prevLkp ?? (effectivePrice ?? null);
+      const lastKnownUpdated = nextLastKnown != null && nextLastKnown !== prevLkp;
+
       const stored: StoredAsset = {
         symbol: a.symbol,
         price: effectivePrice,
-        lastKnownPrice: validPrice ?? prevLkp ?? (effectivePrice ?? null),
+        lastKnownPrice: nextLastKnown,
         priceUpdatedAt,
+        bridgeLiveAt,
         payout: a.payout,
         change,
         category: normalizeAssetCategory(a.category, a.symbol, isOTC),
@@ -291,9 +365,13 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       this.assets.set(a.symbol, stored);
       count++;
 
-      const emitPrice =
+      let emitPrice =
         validPrice ??
-        (effectivePrice != null && (this.isLive(stored) || isFocused) ? effectivePrice : null);
+        (effectivePrice != null && (this.isBridgeLive(stored) || isFocused) ? effectivePrice : null);
+      if (emitPrice == null && lastKnownUpdated && stored.lastKnownPrice != null) {
+        const display = this.displayPrice(stored);
+        if (display != null) emitPrice = display;
+      }
       if (emitPrice != null) {
         this.emit({
           symbol: stored.symbol,
@@ -306,10 +384,18 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     }
     if (count > 0) {
       this.lastUpdate = now;
-      if (syntheticFallbackEnabled) this.ensureSyntheticTimer();
+      if (syntheticFallbackEnabled) {
+        this.ensureSyntheticTimer();
+        this.refreshAllSyntheticPrices();
+      } else if (anchoredPulseEnabled) this.ensureAnchoredPulseTimer();
       this.pulseSubscribers();
     }
     return count;
+  }
+
+  /** @deprecated use refreshAllSyntheticPrices */
+  private warmSyntheticPrices(): void {
+    this.refreshAllSyntheticPrices();
   }
 
   /** Drop corrupted prices (timestamps, payout bleed) without clearing payouts. */
@@ -340,14 +426,17 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   }
 
   rows(): MarketDataRow[] {
-    return Array.from(this.assets.values()).map((a) => ({
-      symbol: a.symbol,
-      price: this.isLive(a) ? a.price : a.lastKnownPrice,
-      payout: a.payout,
-      source: 'platform-bridge',
-      lastUpdated: a.updatedAt,
-      stale: !this.isLive(a),
-    }));
+    return Array.from(this.assets.values()).map((a) => {
+      const display = this.displayPrice(a);
+      return {
+        symbol: a.symbol,
+        price: display,
+        payout: a.payout,
+        source: 'platform-bridge',
+        lastUpdated: a.updatedAt,
+        stale: !this.isLive(a) && display == null,
+      };
+    });
   }
 
   private emit(update: PriceUpdate) {
@@ -362,24 +451,31 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   }
 
   async getAssets(): Promise<Asset[]> {
-    return Array.from(this.assets.values()).map((a) => ({
+    if (syntheticFallbackEnabled && this.assets.size > 0) {
+      this.ensureSyntheticTimer();
+      this.refreshAllSyntheticPrices();
+    }
+    return Array.from(this.assets.values()).map((a) => {
+      const display = this.displayPrice(a);
+      return {
       id: a.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       symbol: a.symbol,
       name: a.symbol.replace(/ otc$/i, ''),
       category: a.category,
       isOTC: a.isOTC,
-      price: this.displayPrice(a),
+      price: display,
       lastKnownPrice:
         a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
           ? a.lastKnownPrice
-          : syntheticFallbackEnabled
-            ? this.synthetic.get(a.symbol)
+          : syntheticFallbackEnabled && display != null
+            ? display
             : null,
       payout: a.payout,
       change: a.change,
       flags: resolveAssetFlags(a.symbol),
       favorite: false,
-    }));
+    };
+    });
   }
 
   private requireConfigured(): void {
@@ -428,9 +524,22 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     if (syntheticFallbackEnabled) {
       for (const symbol of symbols) {
         const a = this.assets.get(symbol);
-        if (a && !this.isLive(a)) this.applySynthetic(symbol);
+        if (a && !this.isBridgeLive(a)) this.applySynthetic(symbol);
       }
       this.ensureSyntheticTimer();
+    } else if (anchoredPulseEnabled) {
+      for (const symbol of symbols) {
+        const a = this.assets.get(symbol);
+        if (
+          a &&
+          a.lastKnownPrice != null &&
+          isPlausibleMarketPrice(a.lastKnownPrice, symbol) &&
+          !this.synthetic.has(symbol)
+        ) {
+          this.synthetic.anchor(symbol, a.lastKnownPrice);
+        }
+      }
+      this.ensureAnchoredPulseTimer();
     }
     return () => {
       this.listeners.delete(listener);

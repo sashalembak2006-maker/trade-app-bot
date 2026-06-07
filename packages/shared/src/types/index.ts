@@ -97,7 +97,10 @@ export interface NewsItem {
   summary: string;
   category: 'forex' | 'crypto' | 'economy';
   date: string;
+  time?: string;
   source: string;
+  body?: string;
+  imageUrl?: string;
 }
 
 export interface IndicatorInfo {
@@ -165,6 +168,8 @@ export interface BridgeAssetInput {
   poAsset?: string;
   /** Live price for the ACTIVE pair only. Omit/null for list-only assets. */
   price?: number | null;
+  /** True when price is a real PO WebSocket/DOM tick (not extension catalog pulse). */
+  live?: boolean;
   payout: number;
   change?: number;
   category?: string;

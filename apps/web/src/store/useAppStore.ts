@@ -84,36 +84,43 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setLanguage: (language) => set({ language }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
-  setAssets: (assets) =>
-    set({
-      assets: assets.map((a) => ({
-        ...a,
-        price: a.price != null && isPlausiblePrice(a.price) ? a.price : null,
-        lastKnownPrice:
-          a.lastKnownPrice != null && isPlausiblePrice(a.lastKnownPrice) ? a.lastKnownPrice : null,
-      })),
+  setAssets: (incoming) =>
+    set((state) => {
+      const prevBySym = new Map(state.assets.map((a) => [a.symbol, a]));
+      return {
+        assets: incoming.map((a) => {
+          const prev = prevBySym.get(a.symbol);
+          let price = a.price != null && isPlausiblePrice(a.price) ? a.price : null;
+          let lastKnownPrice =
+            a.lastKnownPrice != null && isPlausiblePrice(a.lastKnownPrice) ? a.lastKnownPrice : null;
+          if (price == null && prev?.price != null) price = prev.price;
+          if (lastKnownPrice == null && prev?.lastKnownPrice != null) lastKnownPrice = prev.lastKnownPrice;
+          let change = Number.isFinite(a.change) ? a.change : (prev?.change ?? 0);
+          const basis = prev?.price ?? prev?.lastKnownPrice;
+          if (price != null && basis != null && basis > 0 && price !== basis) {
+            change = Math.round(((price - basis) / basis) * 100 * 100) / 100;
+          }
+          return {
+            ...a,
+            price,
+            lastKnownPrice,
+            change,
+            favorite: prev?.favorite ?? a.favorite ?? false,
+          };
+        }),
+      };
     }),
   updateAssetPrice: (symbol, price, payout, change) => {
     const pct = Number.isFinite(change) ? Math.round(change * 100) / 100 : 0;
+    const pricePatch =
+      price != null && isPlausiblePrice(price) ? { price, lastKnownPrice: price } : {};
+    const applyPatch = (a: Asset) =>
+      a.symbol === symbol ? { ...a, payout, change: pct, ...pricePatch } : a;
     return set({
-      assets: get().assets.map((a) =>
-        a.symbol === symbol
-          ? {
-              ...a,
-              payout,
-              change: pct,
-              ...(price != null && isPlausiblePrice(price) ? { price, lastKnownPrice: price } : {}),
-            }
-          : a,
-      ),
+      assets: get().assets.map(applyPatch),
       selectedAsset:
         get().selectedAsset?.symbol === symbol
-          ? {
-              ...get().selectedAsset!,
-              payout,
-              change: pct,
-              ...(price != null && isPlausiblePrice(price) ? { price, lastKnownPrice: price } : {}),
-            }
+          ? { ...get().selectedAsset!, payout, change: pct, ...pricePatch }
           : get().selectedAsset,
       signalCurrentPrice:
         price != null &&

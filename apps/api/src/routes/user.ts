@@ -3,6 +3,7 @@ import {
   SignalEngine,
   BridgeMarketDataProvider,
   calculateMartingale,
+  isBridgeSyntheticFallbackEnabled,
   NEWS,
   INDICATORS,
   LEARNING,
@@ -322,8 +323,10 @@ router.post('/signals/generate', async (req, res) => {
       if (provider.hasLivePrice(symbol)) {
         price = await provider.getAssetPrice(symbol);
       } else {
-        log.info('Waiting for live price', { symbol, waitMs });
-        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+        log.info('Waiting for live price', { symbol, waitMs, hybrid: isBridgeSyntheticFallbackEnabled() });
+        price = await provider.waitForLivePrice(symbol, waitMs, {
+          allowSynthetic: isBridgeSyntheticFallbackEnabled(),
+        });
       }
     } else {
       price = await provider.getAssetPrice(symbol);
@@ -404,19 +407,19 @@ router.post('/calculator', async (req, res) => {
 
 router.get('/news', async (req, res) => {
   const user = await ensureUser(req, res);
-  if (!user || !hasAppAccess(user)) return res.status(403).json({ error: 'Access denied' });
+  if (!user || !hasLimitedAccess(user)) return res.status(403).json({ error: 'Access denied' });
   res.json(NEWS);
 });
 
 router.get('/indicators', async (req, res) => {
   const user = await ensureUser(req, res);
-  if (!user || !hasAppAccess(user)) return res.status(403).json({ error: 'Access denied' });
+  if (!user || !hasLimitedAccess(user)) return res.status(403).json({ error: 'Access denied' });
   res.json(INDICATORS);
 });
 
 router.get('/learning', async (req, res) => {
   const user = await ensureUser(req, res);
-  if (!user || !hasAppAccess(user)) return res.status(403).json({ error: 'Access denied' });
+  if (!user || !hasLimitedAccess(user)) return res.status(403).json({ error: 'Access denied' });
   res.json(LEARNING);
 });
 
