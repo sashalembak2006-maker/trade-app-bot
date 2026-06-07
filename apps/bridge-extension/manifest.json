@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PRIME TRADE BOT — Platform Bridge",
-  "version": "1.6.9",
+  "version": "1.7.0",
   "description": "Reads live asset symbol, price and payout from Pocket Option WebSocket + page and forwards to PRIME TRADE BOT backend.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -20,7 +20,7 @@
   "background": { "service_worker": "background.js" },
   "web_accessible_resources": [
     {
-      "resources": ["page-hook.js", "binary-decoder.js"],
+      "resources": ["page-hook.js", "binary-decoder.js", "asset-category.js"],
       "matches": [
         "https://pocketoption.com/*",
         "https://*.pocketoption.com/*",
@@ -46,7 +46,7 @@
         "https://po.site/*",
         "https://*.po.site/*"
       ],
-      "js": ["binary-decoder.js", "page-hook.js"],
+      "js": ["binary-decoder.js", "asset-category.js", "page-hook.js"],
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN"
@@ -62,7 +62,7 @@
         "https://po.site/*",
         "https://*.po.site/*"
       ],
-      "js": ["content.js"],
+      "js": ["asset-category.js", "content.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

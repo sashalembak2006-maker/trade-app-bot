@@ -7,7 +7,7 @@
   /** Fallback if manifest MAIN-world page-hook did not run (CSP / timing). */
   (function ensurePageHook() {
     try {
-      const files = ['binary-decoder.js', 'page-hook.js'];
+      const files = ['binary-decoder.js', 'asset-category.js', 'page-hook.js'];
       let i = 0;
       function next() {
         if (i >= files.length) return;
@@ -122,6 +122,22 @@
   let lastLogKey = '';
   const wsAssets = new Map();
   let wsActiveSymbol = null;
+
+  function withCategory(a) {
+    if (!a?.symbol) return a;
+    const isOTC = a.isOTC ?? /otc/i.test(a.symbol);
+    return {
+      ...a,
+      isOTC,
+      category:
+        a.category ||
+        (typeof resolveBridgeCategory === 'function'
+          ? resolveBridgeCategory(a.symbol, isOTC)
+          : isOTC
+            ? 'forex_otc'
+            : 'forex'),
+    };
+  }
 
   function priceRangeForSymbol(symbol) {
     const s = (symbol || '').toUpperCase();
@@ -421,13 +437,14 @@
       for (const a of ev.data.assets) {
         if (!a?.symbol || typeof a.payout !== 'number' || a.payout < 1 || a.payout > 100) continue;
         const prev = wsAssets.get(a.symbol);
-        wsAssets.set(a.symbol, {
+        wsAssets.set(a.symbol, withCategory({
           ...prev,
           symbol: a.symbol,
           payout: a.payout,
           isOTC: a.isOTC ?? prev?.isOTC,
+          category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
-        });
+        }));
       }
     }
     if (ev.data.type === 'stream' && typeof ev.data.price === 'number') {
@@ -665,12 +682,12 @@
     const payout = parsePayout(row.textContent || '');
     if (!isValidPayout(payout)) return null;
 
-    return {
+    return withCategory({
       symbol,
       payout,
       isOTC: /otc/i.test(symbol),
       timestamp: Date.now(),
-    };
+    });
   }
 
   function scrapeList() {
@@ -716,12 +733,12 @@
       for (let d = 0; d < 6 && box; d++) {
         const symbol = findSymbolInRow(box);
         if (symbol) {
-          out.set(symbol, {
+          out.set(symbol, withCategory({
             symbol,
             payout,
             isOTC: /otc/i.test(symbol),
             timestamp: Date.now(),
-          });
+          }));
           break;
         }
         box = box.parentElement;
@@ -752,12 +769,12 @@
     if (!symbol || !looksLikeSymbol(symbol) || payout == null) return null;
 
     const price = pickPrice(priceCandidates, symbol, payout);
-    const payload = {
+    const payload = withCategory({
       symbol,
       payout,
       isOTC: /otc/i.test(symbol),
       timestamp: Date.now(),
-    };
+    });
     if (price != null) payload.price = price;
     return payload;
   }
@@ -904,12 +921,12 @@
     if (!primary || payout == null) return out;
 
     for (const symbol of list.length ? list : [primary]) {
-      out.push({
+      out.push(withCategory({
         symbol,
         payout,
         isOTC: /otc/i.test(symbol),
         timestamp: Date.now(),
-      });
+      }));
     }
     return out;
   }
@@ -943,12 +960,13 @@
 
     for (const a of wsAssets.values()) {
       if (!a?.symbol || typeof a.payout !== 'number') continue;
-      const entry = {
+      const entry = withCategory({
         symbol: a.symbol,
         payout: a.payout,
         isOTC: a.isOTC ?? /otc/i.test(a.symbol),
+        category: a.category,
         timestamp: a.timestamp ?? Date.now(),
-      };
+      });
       const p = sanitizeWsPrice(a.price, a.symbol, a.payout);
       if (p != null) entry.price = p;
       bySymbol.set(a.symbol, entry);
@@ -957,13 +975,14 @@
     const list = scrapeList();
     for (const a of list) {
       const prev = bySymbol.get(a.symbol);
-      bySymbol.set(a.symbol, {
+      bySymbol.set(a.symbol, withCategory({
         ...prev,
         symbol: a.symbol,
         payout: a.payout ?? prev?.payout,
         isOTC: a.isOTC ?? prev?.isOTC ?? /otc/i.test(a.symbol),
+        category: a.category ?? prev?.category,
         timestamp: a.timestamp ?? prev?.timestamp ?? Date.now(),
-      });
+      }));
     }
 
     const activeSymbol = resolveActiveSymbol(list);
@@ -978,12 +997,13 @@
       if (!isValidPayout(payout)) payout = 92;
 
       if (typeof payout === 'number') {
-        activePayload = {
+        activePayload = withCategory({
           symbol: activeSymbol,
           payout,
           isOTC: prev?.isOTC ?? /otc/i.test(activeSymbol),
+          category: prev?.category,
           timestamp: Date.now(),
-        };
+        });
         const price = resolveActivePrice(activeSymbol, payout);
         if (price != null) activePayload.price = price;
         bySymbol.set(activeSymbol, { ...prev, ...activePayload });

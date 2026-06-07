@@ -98,7 +98,7 @@
     const isOtc = row[14] === true || /_otc/i.test(raw);
     const symbol = poSymbolToDisplay(raw);
     if (!symbol) return null;
-    return { symbol, payout, isOTC: isOtc, timestamp: Date.now() };
+    return { symbol, payout, isOTC: isOtc, category: resolveBridgeCategory(symbol, isOtc), timestamp: Date.now() };
   }
 
   function parseUpdateAssets(data) {
