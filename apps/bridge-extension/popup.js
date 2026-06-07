@@ -98,8 +98,8 @@ $('test').addEventListener('click', async () => {
       return;
     }
     $('hint').textContent = resp?.ok
-      ? `Backend OK ✓ (${cfg.backendUrl})`
-      : `Backend FAIL: ${resp?.error ?? resp?.status}`;
+      ? `Backend OK ✓ POST OK`
+      : `FAIL: ${resp?.error ?? resp?.status ?? 'unknown'} — ${resp?.url ?? ''}`;
     renderLive();
   });
 });

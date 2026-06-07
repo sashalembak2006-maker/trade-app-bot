@@ -51,9 +51,9 @@ interface Listener {
   cb: (data: PriceUpdate) => void;
 }
 
-/** Bridge extension posts every ~250–400ms; allow brief gaps without marking stale. */
+/** Bridge/collector should stay connected if POSTs pause briefly. */
+const HEARTBEAT_STALE_MS = 45_000;
 const PRICE_STALE_MS = 12_000;
-const HEARTBEAT_STALE_MS = 20_000;
 
 function roundChangePct(raw: number): number {
   if (!Number.isFinite(raw)) return 0;

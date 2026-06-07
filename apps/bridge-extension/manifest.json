@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "PRIME TRADE BOT — Platform Bridge",
-  "version": "1.7.3",
+  "version": "1.8.0",
   "description": "Reads live asset symbol, price and payout from Pocket Option WebSocket + page and forwards to PRIME TRADE BOT backend.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "alarms"],
   "host_permissions": [
     "http://localhost:3001/*",
     "http://127.0.0.1:3001/*",

@@ -8,11 +8,14 @@ const frameData = new Map();
 let flushTimer = null;
 let postInFlight = false;
 let pendingPost = null;
-let lastPostedKey = '';
 let lastPostedAt = 0;
-const MIN_POST_MS = 400;
-/** Re-post unchanged payload so Railway keeps bridge.connected=true (server stale = 20s). */
-const KEEPALIVE_MS = 5000;
+/** Max 1 POST/s — keeps Railway bridge.connected without hammering. */
+const POST_INTERVAL_MS = 1000;
+
+async function getConfig() {
+  const cfg = await chrome.storage.local.get(DEFAULTS);
+  return { ...DEFAULTS, ...cfg };
+}
 
 function priceRangeForSymbol(symbol) {
   const s = (symbol || '').toUpperCase();
@@ -39,11 +42,6 @@ function priceRangeForSymbol(symbol) {
   return { min: 0.000_01, max: 25 };
 }
 
-async function getConfig() {
-  const cfg = await chrome.storage.local.get(DEFAULTS);
-  return { ...DEFAULTS, ...cfg };
-}
-
 function isReasonablePrice(price, symbol) {
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 || price >= 1_000_000) {
     return false;
@@ -66,14 +64,13 @@ function mergeFrameAssets() {
   const now = Date.now();
   const entries = [];
   for (const [key, entry] of frameData) {
-    if (now - entry.at > 5000) {
+    if (now - entry.at > 8000) {
       frameData.delete(key);
       continue;
     }
     entries.push({ key, entry });
   }
 
-  // Prefer trading-terminal frames that carry a live price.
   entries.sort((a, b) => {
     const aScore =
       (a.entry.isTradingPage ? 4 : 0) +
@@ -114,8 +111,6 @@ function mergeFrameAssets() {
     }
   }
 
-  // Keep live prices for every symbol that PO updateStream reported (not only active).
-
   return {
     assets: Array.from(merged.values()),
     frameCount,
@@ -126,7 +121,7 @@ function mergeFrameAssets() {
 
 function scheduleFlush() {
   if (flushTimer) clearTimeout(flushTimer);
-  flushTimer = setTimeout(flushAndPost, 400);
+  flushTimer = setTimeout(flushAndPost, 300);
 }
 
 function backendUrls(base) {
@@ -142,22 +137,40 @@ function backendUrls(base) {
   return [...new Set(urls)];
 }
 
-async function fetchBackend(path, init) {
+async function fetchBackend(path, init, retries = 3) {
   const cfg = await getConfig();
   const urls = backendUrls(cfg.backendUrl);
   let lastError = 'Failed to fetch';
-  for (const url of urls) {
-    try {
-      const res = await fetch(`${url}${path}`, {
-        ...init,
-        signal: AbortSignal.timeout?.(8000) ?? undefined,
-      });
-      return { res, url };
-    } catch (e) {
-      lastError = e.message || lastError;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    for (const url of urls) {
+      try {
+        const res = await fetch(`${url}${path}`, {
+          ...init,
+          signal: AbortSignal.timeout?.(12000) ?? undefined,
+        });
+        return { res, url };
+      } catch (e) {
+        lastError = e.message || lastError;
+      }
+    }
+    if (attempt < retries - 1) {
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
     }
   }
   throw new Error(lastError);
+}
+
+async function markRecentSuccess(count, extra = {}) {
+  const now = Date.now();
+  await chrome.storage.local.set({
+    connected: true,
+    backendReachable: true,
+    backendReachableAt: now,
+    lastHeartbeatAt: now,
+    lastStatus: `OK (${count} assets)`,
+    lastStatusAt: now,
+    ...extra,
+  });
 }
 
 async function flushAndPost() {
@@ -186,7 +199,6 @@ async function flushAndPost() {
   }
 }
 
-/** Keep popup honest: backend up vs no scrape data. */
 async function pingBackend() {
   try {
     const { res } = await fetchBackend('/api/health');
@@ -200,7 +212,7 @@ async function pingBackend() {
     await chrome.storage.local.set({
       backendReachable: false,
       backendReachableAt: Date.now(),
-      lastStatus: `${e.message} — запустіть ЗАПУСК.bat`,
+      lastStatus: `${e.message} — перевірте URL Railway`,
       lastStatusAt: Date.now(),
     });
   }
@@ -226,36 +238,19 @@ async function postAssets(assets, activeSymbol) {
     assets = cleanAssets(assets);
     if (assets.length === 0) return;
 
-    const payloadKey = JSON.stringify(
-      assets.map((a) => [a.symbol, a.price ?? null, a.payout]),
-    );
     const now = Date.now();
-    const isDuplicate = payloadKey === lastPostedKey;
-    if (isDuplicate && now - lastPostedAt < MIN_POST_MS) {
-      await chrome.storage.local.set({
-        connected: true,
-        backendReachable: true,
-        backendReachableAt: now,
-        lastHeartbeatAt: now,
-      });
-      return;
-    }
-    // Same data but server heartbeat would expire — send keepalive POST.
-    if (isDuplicate && now - lastPostedAt < KEEPALIVE_MS) {
-      await chrome.storage.local.set({
-        connected: true,
-        backendReachable: true,
-        backendReachableAt: now,
-        lastHeartbeatAt: now,
-      });
+    if (now - lastPostedAt < POST_INTERVAL_MS) {
+      if (lastPostedAt > 0 && now - lastPostedAt < 30_000) {
+        await markRecentSuccess(assets.length);
+      }
       return;
     }
 
     const cfg = await getConfig();
-    if (!cfg.secret) {
+    if (!cfg.secret?.trim()) {
       await chrome.storage.local.set({
         connected: false,
-        lastStatus: 'Bridge Secret порожній — введіть dev-secret',
+        lastStatus: 'Bridge Secret порожній',
         lastStatusAt: Date.now(),
       });
       return;
@@ -278,7 +273,7 @@ async function postAssets(assets, activeSymbol) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-bridge-secret': cfg.secret,
+          'x-bridge-secret': cfg.secret.trim(),
         },
         body: JSON.stringify({
           source: 'browser-extension',
@@ -288,27 +283,25 @@ async function postAssets(assets, activeSymbol) {
       });
       const body = await res.json().catch(() => ({}));
       const ok = res.ok;
+      const accepted = body.accepted ?? assets.length;
       await chrome.storage.local.set({
         connected: ok,
         backendReachable: true,
         backendReachableAt: Date.now(),
         lastStatus: ok
-          ? `OK (${body.accepted ?? 0} assets)`
+          ? `OK (${accepted} assets)`
           : res.status === 401
-            ? 'HTTP 401: невірний Secret — має бути dev-secret'
+            ? 'HTTP 401: невірний Bridge Secret — скопіюй з Railway Variables'
             : `HTTP ${res.status}: ${body.error ?? 'error'}`,
         lastStatusAt: Date.now(),
       });
-      if (ok) {
-        lastPostedKey = payloadKey;
-        lastPostedAt = Date.now();
-      }
+      if (ok) lastPostedAt = Date.now();
     } catch (e) {
       await chrome.storage.local.set({
         connected: false,
         backendReachable: false,
         backendReachableAt: Date.now(),
-        lastStatus: `${e.message} — запустіть ЗАПУСК.bat (вікно API має бути відкритим)`,
+        lastStatus: `${e.message} — перевірте інтернет і Railway URL`,
         lastStatusAt: Date.now(),
       });
     }
@@ -317,7 +310,7 @@ async function postAssets(assets, activeSymbol) {
     if (pendingPost) {
       const next = pendingPost;
       pendingPost = null;
-      setTimeout(() => postAssets(next.assets, next.activeSymbol), MIN_POST_MS);
+      setTimeout(() => postAssets(next.assets, next.activeSymbol), POST_INTERVAL_MS);
     }
   }
 }
@@ -341,23 +334,56 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  if (msg.type === 'bridge-keepalive') {
+    flushAndPost();
+    return false;
+  }
+
   if (msg.type === 'test-backend') {
     (async () => {
       try {
-        const { res, url } = await fetchBackend('/api/health');
-        const body = await res.json().catch(() => ({}));
+        const cfg = await getConfig();
+        const { res: healthRes, url } = await fetchBackend('/api/health');
+        const healthBody = await healthRes.json().catch(() => ({}));
+        if (!healthRes.ok) {
+          sendResponse({ ok: false, status: healthRes.status, error: `Health HTTP ${healthRes.status}`, url });
+          return;
+        }
+        const testAsset = [{ symbol: 'EUR/USD OTC', payout: 92, isOTC: true, category: 'forex_otc' }];
+        const { res: postRes } = await fetchBackend('/api/bridge/assets/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-bridge-secret': cfg.secret.trim(),
+          },
+          body: JSON.stringify({ source: 'browser-extension-test', assets: testAsset }),
+        });
+        const postBody = await postRes.json().catch(() => ({}));
+        const ok = postRes.ok;
         await chrome.storage.local.set({
-          backendReachable: res.ok,
+          backendReachable: true,
+          connected: ok,
           backendReachableAt: Date.now(),
-          lastStatus: res.ok ? `Backend OK ✓ (${url})` : `HTTP ${res.status}`,
+          lastStatus: ok
+            ? `Backend OK ✓ POST OK (${url})`
+            : postRes.status === 401
+              ? 'HTTP 401: Bridge Secret ≠ Railway BRIDGE_SECRET'
+              : `POST HTTP ${postRes.status}`,
           lastStatusAt: Date.now(),
         });
-        sendResponse({ ok: res.ok, status: res.status, body, url });
+        sendResponse({
+          ok,
+          status: postRes.status,
+          health: healthBody,
+          post: postBody,
+          url,
+          error: ok ? undefined : `POST ${postRes.status}`,
+        });
       } catch (e) {
         await chrome.storage.local.set({
           backendReachable: false,
-          backendReachableAt: Date.now(),
-          lastStatus: `${e.message} — подвійний клік ЗАПУСК.bat у папці проєкту`,
+          connected: false,
+          lastStatus: e.message,
           lastStatusAt: Date.now(),
         });
         sendResponse({ ok: false, error: e.message });
@@ -373,9 +399,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   const existing = await chrome.storage.local.get(DEFAULTS);
   const merged = { ...DEFAULTS, ...existing };
   if (!existing.secret) merged.secret = DEFAULTS.secret;
-  if (!existing.backendUrl || existing.backendUrl.includes('localhost:3001')) {
-    merged.backendUrl = DEFAULTS.backendUrl;
-  }
   await chrome.storage.local.set(merged);
 });
 
@@ -390,23 +413,13 @@ const PO_TAB_URLS = [
   '*://*.po.site/*',
 ];
 
-/** Poll backend focus requests — tells content script to click the asset on PO. */
 async function pollFocus() {
   try {
     const cfg = await getConfig();
     const base = cfg.backendUrl.replace(/\/$/, '');
-    const urls = [base];
-    if (base.includes('localhost')) urls.push(base.replace('localhost', '127.0.0.1'));
-    let data = null;
-    for (const url of urls) {
-      try {
-        const res = await fetch(`${url}/api/bridge/focus`);
-        if (res.ok) {
-          data = await res.json();
-          break;
-        }
-      } catch { /* try next */ }
-    }
+    const res = await fetch(`${base}/api/bridge/focus`);
+    if (!res.ok) return;
+    const data = await res.json();
     if (!data?.symbol) return;
     const tabs = await chrome.tabs.query({ url: PO_TAB_URLS });
     for (const tab of tabs) {
@@ -419,13 +432,9 @@ async function pollFocus() {
 
 setInterval(pollFocus, 500);
 
-/** Keep bridge.connected on server even when PO prices pause. */
-setInterval(async () => {
-  if (postInFlight) return;
-  const { assets, activeSymbol } = mergeFrameAssets();
-  if (assets.length > 0 && Date.now() - lastPostedAt >= KEEPALIVE_MS) {
-    await postAssets(assets, activeSymbol);
-  } else if (assets.length === 0) {
-    await pingBackend();
-  }
-}, KEEPALIVE_MS);
+if (chrome.alarms) {
+  chrome.alarms.create('bridge-keepalive', { periodInMinutes: 0.5 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'bridge-keepalive') flushAndPost();
+  });
+}

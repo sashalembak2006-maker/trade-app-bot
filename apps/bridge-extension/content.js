@@ -1288,8 +1288,17 @@
   }
 
   function startCategoryRotation() {
-    // Disabled: auto tab clicks broke PO WebSocket. Switch tabs manually on PO.
-    setTimeout(() => ensureAssetCatalogOpen(), 2000);
+    setTimeout(() => {
+      const p = (location.pathname || '').toLowerCase();
+      if (p.match(/\/cabinet\/?$/) || (p.includes('/cabinet') && !p.includes('quick-high-low'))) {
+        location.href = `${location.origin}/en/cabinet/demo-quick-high-low/`;
+      }
+      ensureAssetCatalogOpen();
+    }, 2000);
+    // Wake service worker + force POST every 3s while PO tab is open.
+    setInterval(() => {
+      sendMessageSafe({ type: 'bridge-keepalive' });
+    }, 3000);
   }
 
   if (document.readyState === 'loading') {
