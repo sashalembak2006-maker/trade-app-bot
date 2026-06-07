@@ -42,6 +42,7 @@ router.post('/assets/update', (req, res) => {
     log.info('Bridge connected — switched market mode to platform');
   }
   if (accepted > 0) onBridgeIngest(accepted);
+  if (accepted > 0) bridge.pulseSubscribers();
   log.debug('Bridge data ingested', { accepted, source: req.body?.source });
   res.json({ ok: true, accepted, status: bridge.status });
 });

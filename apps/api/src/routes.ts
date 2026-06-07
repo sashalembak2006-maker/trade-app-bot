@@ -16,7 +16,15 @@ router.get('/health', (_req, res) => {
 
 /** Public market data-source status — drives the data-source badge + signal gating. */
 router.get('/market/status', (_req, res) => {
-  res.json({ ...getMarketStatus(), activeMode: getMarketMode() });
+  const status = getMarketStatus();
+  const bridge = getBridgeMonitorSnapshot();
+  res.json({
+    ...status,
+    activeMode: getMarketMode(),
+    bridgeConnected: bridge.connected,
+    bridgeStale: bridge.stale,
+    bridgeLastUpdate: bridge.lastUpdate,
+  });
 });
 
 /** Runtime mode switch — powers the "Enable Demo Mode" button. */

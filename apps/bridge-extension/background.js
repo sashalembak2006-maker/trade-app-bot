@@ -1,6 +1,6 @@
 /* eslint-disable */
 const DEFAULTS = {
-  backendUrl: 'http://127.0.0.1:3001',
+  backendUrl: 'https://prime-trade-production.up.railway.app',
   secret: 'dev-secret',
 };
 
@@ -9,12 +9,118 @@ let flushTimer = null;
 let postInFlight = false;
 let pendingPost = null;
 let lastPostedAt = 0;
+let fetchFailStreak = 0;
+let lastPostSuccessAt = 0;
+
 /** Max 1 POST/s — keeps Railway bridge.connected without hammering. */
 const POST_INTERVAL_MS = 1000;
+const OFFSCREEN_URL = 'offscreen.html';
+const pendingOffscreenFetches = new Map();
+let offscreenPort = null;
+
+async function waitForOffscreenPort(maxMs = 5000) {
+  const start = Date.now();
+  while (!offscreenPort && Date.now() - start < maxMs) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!offscreenPort) throw new Error('Offscreen not ready');
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'offscreen-bridge') return;
+  offscreenPort = port;
+  port.onDisconnect.addListener(() => {
+    offscreenPort = null;
+    ensureOffscreen().catch(() => {});
+  });
+  port.onMessage.addListener((msg) => {
+    const resolver = pendingOffscreenFetches.get(msg.id);
+    if (!resolver) return;
+    pendingOffscreenFetches.delete(msg.id);
+    resolver(msg);
+  });
+});
+
+function normalizeBackendUrl(raw) {
+  let b = (raw || '').trim().replace(/\/$/, '');
+  b = b.replace(/\/api\/health\/?$/i, '');
+  b = b.replace(/\/api\/?$/i, '');
+  return b || DEFAULTS.backendUrl;
+}
 
 async function getConfig() {
   const cfg = await chrome.storage.local.get(DEFAULTS);
-  return { ...DEFAULTS, ...cfg };
+  const merged = { ...DEFAULTS, ...cfg };
+  merged.backendUrl = normalizeBackendUrl(merged.backendUrl);
+  return merged;
+}
+
+async function ensureOffscreen() {
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT'],
+      documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)],
+    });
+    if (contexts.length > 0) return;
+  }
+  try {
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_URL,
+      reasons: ['WORKERS'],
+      justification: 'Relay HTTPS fetch to PRIME TRADE BOT Railway backend',
+    });
+  } catch (e) {
+    if (!/already exists|only a single offscreen/i.test(String(e?.message || e))) throw e;
+  }
+}
+
+function makeResponse(status, text) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => {
+      try {
+        return JSON.parse(text || '{}');
+      } catch {
+        return {};
+      }
+    },
+    text: async () => text || '',
+  };
+}
+
+async function fetchViaOffscreen(url, init = {}) {
+  await ensureOffscreen();
+  await waitForOffscreenPort();
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingOffscreenFetches.delete(id);
+      reject(new Error('Offscreen fetch timeout'));
+    }, 15000);
+
+    pendingOffscreenFetches.set(id, (msg) => {
+      clearTimeout(timer);
+      if (msg.ok) resolve(makeResponse(msg.status, msg.text));
+      else reject(new Error(msg.error || 'Failed to fetch'));
+    });
+
+    try {
+      offscreenPort.postMessage({
+        id,
+        type: 'fetch',
+        url,
+        method: init.method || 'GET',
+        headers: init.headers || {},
+        body: init.body,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      pendingOffscreenFetches.delete(id);
+      reject(e);
+    }
+  });
 }
 
 function priceRangeForSymbol(symbol) {
@@ -84,7 +190,7 @@ function mergeFrameAssets() {
   });
 
   const merged = new Map();
-  let hosts = new Set();
+  const hosts = new Set();
   let frameCount = 0;
   let activeSymbol = null;
 
@@ -121,7 +227,7 @@ function mergeFrameAssets() {
 
 function scheduleFlush() {
   if (flushTimer) clearTimeout(flushTimer);
-  flushTimer = setTimeout(flushAndPost, 300);
+  flushTimer = setTimeout(flushAndPost, 50);
 }
 
 function backendUrls(base) {
@@ -141,16 +247,20 @@ async function fetchBackend(path, init, retries = 3) {
   const cfg = await getConfig();
   const urls = backendUrls(cfg.backendUrl);
   let lastError = 'Failed to fetch';
+
   for (let attempt = 0; attempt < retries; attempt++) {
     for (const url of urls) {
       try {
-        const res = await fetch(`${url}${path}`, {
-          ...init,
-          signal: AbortSignal.timeout?.(12000) ?? undefined,
-        });
+        const res = await fetchViaOffscreen(`${url}${path}`, init);
         return { res, url };
       } catch (e) {
         lastError = e.message || lastError;
+        try {
+          const res = await fetch(`${url}${path}`, init);
+          return { res, url };
+        } catch (e2) {
+          lastError = e2.message || lastError;
+        }
       }
     }
     if (attempt < retries - 1) {
@@ -162,14 +272,27 @@ async function fetchBackend(path, init, retries = 3) {
 
 async function markRecentSuccess(count, extra = {}) {
   const now = Date.now();
+  fetchFailStreak = 0;
+  lastPostSuccessAt = now;
   await chrome.storage.local.set({
     connected: true,
     backendReachable: true,
     backendReachableAt: now,
+    lastPostSuccessAt: now,
     lastHeartbeatAt: now,
     lastStatus: `OK (${count} assets)`,
     lastStatusAt: now,
     ...extra,
+  });
+}
+
+async function markFetchFailure(message) {
+  fetchFailStreak++;
+  const now = Date.now();
+  await chrome.storage.local.set({
+    connected: false,
+    lastStatus: message,
+    lastStatusAt: now,
   });
 }
 
@@ -190,31 +313,38 @@ async function flushAndPost() {
     lastIsTradingPage: onTradingPage,
     lastFrame: frameCount ? `${frameCount} frame(s)` : '0',
     lastScrapeCount: assets.length,
+    lastMergedPayload: { assets, activeSymbol },
+    lastMergedAt: now,
   });
 
   if (assets.length > 0) {
-    await postAssets(assets, activeSymbol);
-  } else {
-    await pingBackend();
+    const activeRow = activeSymbol ? assets.find((a) => a.symbol === activeSymbol) : null;
+    const shown = activeRow?.price != null ? activeRow : pickDisplayAsset(assets);
+    if (shown) {
+      await chrome.storage.local.set({
+        lastAsset: activeSymbol || shown.symbol,
+        lastPrice: activeRow?.price ?? shown.price ?? null,
+        lastPayout: (activeRow ?? shown).payout ?? null,
+        lastOtc: !!shown.isOTC,
+      });
+    }
+    ensureRelayTab().catch(() => {});
   }
 }
 
 async function pingBackend() {
   try {
     const { res } = await fetchBackend('/api/health');
+    const now = Date.now();
+    fetchFailStreak = 0;
     await chrome.storage.local.set({
       backendReachable: res.ok,
-      backendReachableAt: Date.now(),
+      backendReachableAt: now,
       lastStatus: res.ok ? 'Backend OK — чекаємо дані з PO' : `HTTP ${res.status}`,
-      lastStatusAt: Date.now(),
+      lastStatusAt: now,
     });
   } catch (e) {
-    await chrome.storage.local.set({
-      backendReachable: false,
-      backendReachableAt: Date.now(),
-      lastStatus: `${e.message} — перевірте URL Railway`,
-      lastStatusAt: Date.now(),
-    });
+    await markFetchFailure(e.message);
   }
 }
 
@@ -284,26 +414,24 @@ async function postAssets(assets, activeSymbol) {
       const body = await res.json().catch(() => ({}));
       const ok = res.ok;
       const accepted = body.accepted ?? assets.length;
-      await chrome.storage.local.set({
-        connected: ok,
-        backendReachable: true,
-        backendReachableAt: Date.now(),
-        lastStatus: ok
-          ? `OK (${accepted} assets)`
-          : res.status === 401
-            ? 'HTTP 401: невірний Bridge Secret — скопіюй з Railway Variables'
-            : `HTTP ${res.status}: ${body.error ?? 'error'}`,
-        lastStatusAt: Date.now(),
-      });
-      if (ok) lastPostedAt = Date.now();
+      if (ok) {
+        lastPostedAt = Date.now();
+        await markRecentSuccess(accepted);
+      } else {
+        fetchFailStreak++;
+        await chrome.storage.local.set({
+          connected: false,
+          backendReachable: true,
+          backendReachableAt: Date.now(),
+          lastStatus:
+            res.status === 401
+              ? 'HTTP 401: невірний Bridge Secret — скопіюй з Railway Variables'
+              : `HTTP ${res.status}: ${body.error ?? 'error'}`,
+          lastStatusAt: Date.now(),
+        });
+      }
     } catch (e) {
-      await chrome.storage.local.set({
-        connected: false,
-        backendReachable: false,
-        backendReachableAt: Date.now(),
-        lastStatus: `${e.message} — перевірте інтернет і Railway URL`,
-        lastStatusAt: Date.now(),
-      });
+      await markFetchFailure(e.message);
     }
   } finally {
     postInFlight = false;
@@ -331,6 +459,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       at: Date.now(),
     });
     scheduleFlush();
+    ensureRelayTab().catch(() => {});
     return false;
   }
 
@@ -339,53 +468,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
-  if (msg.type === 'test-backend') {
+  if (msg.type === 'bridge-get-merged') {
+    sendResponse(mergeFrameAssets());
+    return true;
+  }
+
+  if (msg.type === 'bridge-post-merged') {
     (async () => {
       try {
-        const cfg = await getConfig();
-        const { res: healthRes, url } = await fetchBackend('/api/health');
-        const healthBody = await healthRes.json().catch(() => ({}));
-        if (!healthRes.ok) {
-          sendResponse({ ok: false, status: healthRes.status, error: `Health HTTP ${healthRes.status}`, url });
+        const merged = mergeFrameAssets();
+        if (!merged.assets.length) {
+          sendResponse({ ok: false, error: 'no assets' });
           return;
         }
-        const testAsset = [{ symbol: 'EUR/USD OTC', payout: 92, isOTC: true, category: 'forex_otc' }];
-        const { res: postRes } = await fetchBackend('/api/bridge/assets/update', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-bridge-secret': cfg.secret.trim(),
-          },
-          body: JSON.stringify({ source: 'browser-extension-test', assets: testAsset }),
-        });
-        const postBody = await postRes.json().catch(() => ({}));
-        const ok = postRes.ok;
-        await chrome.storage.local.set({
-          backendReachable: true,
-          connected: ok,
-          backendReachableAt: Date.now(),
-          lastStatus: ok
-            ? `Backend OK ✓ POST OK (${url})`
-            : postRes.status === 401
-              ? 'HTTP 401: Bridge Secret ≠ Railway BRIDGE_SECRET'
-              : `POST HTTP ${postRes.status}`,
-          lastStatusAt: Date.now(),
-        });
-        sendResponse({
-          ok,
-          status: postRes.status,
-          health: healthBody,
-          post: postBody,
-          url,
-          error: ok ? undefined : `POST ${postRes.status}`,
-        });
+        await postAssets(merged.assets, merged.activeSymbol);
+        sendResponse({ ok: true, count: merged.assets.length });
       } catch (e) {
-        await chrome.storage.local.set({
-          backendReachable: false,
-          connected: false,
-          lastStatus: e.message,
-          lastStatusAt: Date.now(),
-        });
         sendResponse({ ok: false, error: e.message });
       }
     })();
@@ -393,13 +491,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   return false;
-});
-
-chrome.runtime.onInstalled.addListener(async () => {
-  const existing = await chrome.storage.local.get(DEFAULTS);
-  const merged = { ...DEFAULTS, ...existing };
-  if (!existing.secret) merged.secret = DEFAULTS.secret;
-  await chrome.storage.local.set(merged);
 });
 
 const PO_TAB_URLS = [
@@ -413,11 +504,80 @@ const PO_TAB_URLS = [
   '*://*.po.site/*',
 ];
 
+const RELAY_PAGE = 'relay.html';
+
+function isPoTabUrl(url) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === 'pocketoption.com' ||
+      host.endsWith('.pocketoption.com') ||
+      host === 'po.trade' ||
+      host.endsWith('.po.trade') ||
+      host === 'po.market' ||
+      host.endsWith('.po.market') ||
+      host === 'po.site' ||
+      host.endsWith('.po.site')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function relayTabUrl() {
+  return chrome.runtime.getURL(RELAY_PAGE);
+}
+
+async function ensureRelayTab() {
+  const url = relayTabUrl();
+  const existing = await chrome.tabs.query({ url });
+  if (existing.length > 0) return existing[0].id;
+  const tab = await chrome.tabs.create({ url, active: false });
+  return tab.id;
+}
+
+async function syncRelayWithPoTabs() {
+  const poTabs = await chrome.tabs.query({ url: PO_TAB_URLS });
+  if (poTabs.length > 0) {
+    await ensureRelayTab();
+    return;
+  }
+  const relayTabs = await chrome.tabs.query({ url: relayTabUrl() });
+  for (const tab of relayTabs) {
+    if (tab.id != null) chrome.tabs.remove(tab.id).catch(() => {});
+  }
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  const existing = await chrome.storage.local.get(DEFAULTS);
+  const merged = { ...DEFAULTS, ...existing };
+  if (!existing.secret) merged.secret = DEFAULTS.secret;
+  merged.backendUrl = normalizeBackendUrl(merged.backendUrl);
+  await chrome.storage.local.set(merged);
+  syncRelayWithPoTabs().catch(() => {});
+});
+
+chrome.runtime.onStartup?.addListener?.(() => {
+  syncRelayWithPoTabs().catch(() => {});
+});
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete' || !isPoTabUrl(tab.url)) return;
+  syncRelayWithPoTabs().catch(() => {});
+});
+
+chrome.tabs.onRemoved.addListener(() => {
+  syncRelayWithPoTabs().catch(() => {});
+});
+
 async function pollFocus() {
   try {
     const cfg = await getConfig();
     const base = cfg.backendUrl.replace(/\/$/, '');
-    const res = await fetch(`${base}/api/bridge/focus`);
+    const res = await fetchViaOffscreen(`${base}/api/bridge/focus`).catch(() =>
+      fetch(`${base}/api/bridge/focus`),
+    );
     if (!res.ok) return;
     const data = await res.json();
     if (!data?.symbol) return;
@@ -427,14 +587,20 @@ async function pollFocus() {
         chrome.tabs.sendMessage(tab.id, { type: 'bridge-focus', symbol: data.symbol }).catch(() => {});
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
-setInterval(pollFocus, 500);
+setInterval(pollFocus, 3000);
+syncRelayWithPoTabs().catch(() => {});
 
 if (chrome.alarms) {
   chrome.alarms.create('bridge-keepalive', { periodInMinutes: 0.5 });
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === 'bridge-keepalive') flushAndPost();
+    if (alarm.name === 'bridge-keepalive') {
+      flushAndPost();
+      syncRelayWithPoTabs().catch(() => {});
+    }
   });
 }

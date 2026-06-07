@@ -1107,7 +1107,7 @@
   window.addEventListener('pageshow', () => {
     contextDead = false;
     if (!tickTimer) {
-      tickTimer = setInterval(tick, 400);
+      tickTimer = setInterval(tick, 100);
       tick();
     }
   });
@@ -1127,7 +1127,7 @@
   function tick() {
     if (contextDead && canSendToExtension()) {
       contextDead = false;
-      if (!tickTimer) tickTimer = setInterval(tick, 400);
+      if (!tickTimer) tickTimer = setInterval(tick, 100);
     }
     const domSym = readActiveSymbolFromDom();
     if (domSym && domSym !== wsActiveSymbol) {
@@ -1151,7 +1151,7 @@
     });
   }
 
-  tickTimer = setInterval(tick, 400);
+  tickTimer = setInterval(tick, 100);
   tick();
 
   let moTimer = null;

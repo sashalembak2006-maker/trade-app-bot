@@ -19,6 +19,16 @@ export function syntheticBasePrice(symbol: string): number {
 export class SyntheticPriceEngine {
   private readonly prices = new Map<string, number>();
 
+  has(symbol: string): boolean {
+    return this.prices.has(symbol);
+  }
+
+  anchor(symbol: string, price: number): void {
+    if (Number.isFinite(price) && price > 0) {
+      this.prices.set(symbol, price);
+    }
+  }
+
   seed(symbol: string): number {
     const p = syntheticBasePrice(symbol);
     this.prices.set(symbol, p);

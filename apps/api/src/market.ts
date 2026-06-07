@@ -39,6 +39,8 @@ function resolveInitialMode(): MarketMode {
   const raw = process.env.MARKET_DATA_MODE;
   if (raw === 'platform' || raw === 'bridge') return 'platform';
   if (raw === 'mock') return 'mock';
+  // Production with bridge secret → platform bridge (extension/collector ingest).
+  if (isProd && process.env.BRIDGE_SECRET?.trim()) return 'platform';
   return isProd ? 'unconfigured' : 'mock';
 }
 
@@ -73,7 +75,14 @@ export function isRuntimeModeSwitchAllowed(): boolean {
 }
 
 export function getMarketStatus(): MarketDataStatus {
-  return getMarketProvider().status;
+  const active = getMarketProvider().status;
+  const bridgeStatus = ensureBridge().status;
+  // When bridge is receiving fresh POSTs, surface that even if active mode differs.
+  if (bridgeStatus.configured && !active.configured) return bridgeStatus;
+  if (active.mode === 'live' && bridgeStatus.lastUpdate && (bridgeStatus.lastUpdate ?? 0) > (active.lastUpdate ?? 0)) {
+    return { ...active, ...bridgeStatus, mode: 'live' as const };
+  }
+  return active;
 }
 
 export function isMarketConfigured(): boolean {

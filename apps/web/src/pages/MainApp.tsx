@@ -86,7 +86,7 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
   }, [setAssets, setMarketStatus]);
 
-  // Poll market status + assets (REST fallback when WS or bridge hiccups).
+  // Poll market status + assets every second (WS + REST for Telegram WebView).
   useEffect(() => {
     const reloadAssets = () => {
       api
@@ -103,10 +103,10 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
         .getMarketStatus()
         .then((s) => {
           setMarketStatus(s);
-          if (s.mode === 'live') reloadAssets();
+          if (s.mode === 'live' && s.configured) reloadAssets();
         })
         .catch(() => { /* keep last status */ });
-    }, 1000);
+    }, 250);
     return () => clearInterval(id);
   }, [setMarketStatus, setAssets]);
 
@@ -121,8 +121,8 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
 
   const bridgeStale =
     marketStatus?.mode === 'live' &&
-    !marketStatus.configured &&
-    (marketStatus.assetCount ?? 0) > 0;
+    marketStatus?.stale === true &&
+    !marketStatus?.configured;
 
   return (
     <div className="relative min-h-full bg-prime-bg">

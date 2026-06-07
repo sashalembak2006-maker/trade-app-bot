@@ -1,11 +1,19 @@
 /* eslint-disable */
-const DEFAULTS = { backendUrl: 'http://127.0.0.1:3001', secret: 'dev-secret' };
+const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: 'dev-secret' };
 
 const $ = (id) => document.getElementById(id);
 
+function baseUrl() {
+  return BridgeHttp.normalizeBackendUrl($('backendUrl').value);
+}
+
+function secret() {
+  return ($('secret').value.trim() || DEFAULTS.secret);
+}
+
 async function load() {
   const cfg = await chrome.storage.local.get(DEFAULTS);
-  $('backendUrl').value = cfg.backendUrl ?? DEFAULTS.backendUrl;
+  $('backendUrl').value = BridgeHttp.normalizeBackendUrl(cfg.backendUrl ?? DEFAULTS.backendUrl);
   $('secret').value = cfg.secret ?? DEFAULTS.secret;
   renderLive();
 }
@@ -16,64 +24,41 @@ function isRecent(ts, ms) {
 
 async function renderLive() {
   const data = await chrome.storage.local.get([
-    'connected', 'lastStatus', 'lastStatusAt', 'lastHeartbeatAt', 'backendReachable', 'backendReachableAt',
-    'lastAsset', 'lastPrice', 'lastPayout', 'lastHost', 'lastPath', 'lastIsTradingPage',
+    'lastStatus', 'lastStatusAt', 'lastHeartbeatAt',
+    'lastPostSuccessAt', 'lastPostError',
+    'lastAsset', 'lastPrice', 'lastPayout', 'lastHost', 'lastPath',
     'lastFrame', 'lastScrapeCount',
   ]);
 
   const heartbeatOk = isRecent(data.lastHeartbeatAt, 12000);
-  const backendOk = data.connected && isRecent(data.lastStatusAt, 15000);
-  const backendUp =
-    backendOk ||
-    (data.backendReachable && isRecent(data.backendReachableAt, 15000)) ||
-    (data.lastStatus && /^OK \(/i.test(data.lastStatus) && isRecent(data.lastStatusAt, 15000));
+  const postOk = isRecent(data.lastPostSuccessAt, 12000);
+  const scrapeOk = (data.lastScrapeCount ?? 0) >= 3;
 
   const box = $('statusBox');
   let statusText = 'Status: Not connected';
   let hint = '';
   box.className = 'status bad';
 
-  if (backendOk) {
+  if (postOk && scrapeOk) {
     statusText = 'Status: Connected ✓';
     box.className = 'status ok';
-    hint = data.lastStatus ?? '';
-  } else if (backendUp && (data.lastScrapeCount ?? 0) === 0) {
-    statusText = 'Status: Backend OK, no PO data';
+    hint = data.lastStatus ?? 'POST OK — бот оновлюється';
+    if (data.lastPostError) hint += ` (retry: ${data.lastPostError})`;
+  } else if (heartbeatOk && scrapeOk && !postOk) {
+    statusText = 'Status: Надсилаємо…';
     box.className = 'status warn';
-    hint =
-      'API працює, але пари не зчитані. F5 на сторінці PO → Console (F12): має бути «WebSocket hook installed». Відкрийте список активів зліва.';
-  } else if (heartbeatOk && (data.lastScrapeCount ?? 0) === 0) {
+    hint = data.lastPostError || data.lastStatus || 'Чекаємо POST на Railway…';
+  } else if (heartbeatOk && !scrapeOk) {
     statusText = 'Status: Page OK, no data';
     box.className = 'status warn';
-    hint = 'Натисніть F5 на Pocket Option. Перезавантажте розширення (↻) на chrome://extensions';
-  } else if (heartbeatOk && !backendUp) {
+    hint = 'F5 на Pocket Option → відкрийте список активів';
+  } else if (heartbeatOk) {
     statusText = 'Status: Backend offline';
     box.className = 'status bad';
-    hint =
-      data.lastStatus && !/ЗАПУСК\.bat/i.test(data.lastStatus)
-        ? `${data.lastStatus} — Перевірити backend`
-        : 'Перевірте Backend URL + Secret → кнопка «Перевірити backend». Railway має бути online.';
-  } else if (heartbeatOk) {
-    statusText = 'Status: Scraping…';
-    box.className = 'status warn';
-    hint = data.lastStatus ?? '';
+    hint = data.lastStatus || 'Натисни «Перевірити backend»';
   } else {
-    hint = 'Відкрийте Pocket Option, натисніть F5. Якщо не допомогло — перезавантажте розширення (↻).';
-    if (data.lastStatus) hint = data.lastStatus + ' — ' + hint;
-  }
-
-  if (
-    heartbeatOk &&
-    data.lastIsTradingPage === false &&
-    (data.lastScrapeCount ?? 0) < 10
-  ) {
-    statusText = 'Status: Не та сторінка';
-    box.className = 'status warn';
-    hint =
-      'Відкрийте торговий термінал (Demo Trading). URL: …/demo-quick-high-low/ — потім F5.';
-  } else if (backendOk && (data.lastScrapeCount ?? 0) >= 10) {
-    statusText = 'Status: Connected ✓';
-    box.className = 'status ok';
+    hint = 'Відкрий Pocket Option → F5 → Reload розширення (↻)';
+    if (data.lastStatus) hint = `${data.lastStatus} — ${hint}`;
   }
 
   $('status').textContent = statusText;
@@ -87,21 +72,30 @@ async function renderLive() {
 }
 
 $('test').addEventListener('click', async () => {
-  const cfg = await chrome.storage.local.get(DEFAULTS);
-  await chrome.storage.local.set({
-    backendUrl: $('backendUrl').value.trim() || DEFAULTS.backendUrl,
-    secret: $('secret').value.trim() || DEFAULTS.secret,
-  });
-  chrome.runtime.sendMessage({ type: 'test-backend' }, (resp) => {
-    if (chrome.runtime.lastError) {
-      $('hint').textContent = chrome.runtime.lastError.message;
-      return;
+  const url = baseUrl();
+  $('backendUrl').value = url;
+  await chrome.storage.local.set({ backendUrl: url, secret: secret() });
+  $('hint').textContent = 'Перевірка…';
+  try {
+    const resp = await BridgeHttp.testBackend(secret());
+    if (resp.ok) {
+      const merged = await BridgeHttp.getMergedFromBackground();
+      if (merged?.assets?.length) {
+        const full = await BridgeHttp.postBridgeUpdate(merged, 'browser-extension-test-full', 'test');
+        await BridgeHttp.markPostResult(full, merged.assets.length);
+      } else {
+        await BridgeHttp.markPostResult({ ok: true, accepted: 1 }, 1);
+      }
+      $('hint').textContent = `Backend OK ✓ POST OK (${resp.url})`;
+    } else {
+      await BridgeHttp.markPostResult({ ok: false, error: resp.error }, 0);
+      $('hint').textContent = `FAIL: ${resp.error}`;
     }
-    $('hint').textContent = resp?.ok
-      ? `Backend OK ✓ POST OK`
-      : `FAIL: ${resp?.error ?? resp?.status ?? 'unknown'} — ${resp?.url ?? ''}`;
-    renderLive();
-  });
+  } catch (e) {
+    await BridgeHttp.markPostError(`${e.message} — test`);
+    $('hint').textContent = `FAIL: ${e.message}`;
+  }
+  renderLive();
 });
 
 $('copyBinary').addEventListener('click', async () => {
@@ -111,30 +105,25 @@ $('copyBinary').addEventListener('click', async () => {
   });
   const rows = Array.isArray(bag.prime_bridge_binary_debug) ? bag.prime_bridge_binary_debug : [];
   if (!rows.length) {
-    $('hint').textContent =
-      'Немає binary-кадрів. Відкрийте PO → F5 → перемикайте пару. Перевірте Console: [PRIME Bridge BIN]';
+    $('hint').textContent = 'Немає binary-кадрів. PO → F5 → перемикай пару.';
     return;
   }
   const json = JSON.stringify(rows, null, 2);
   try {
     await navigator.clipboard.writeText(json);
-    const age = bag.prime_bridge_binary_debug_at
-      ? Math.round((Date.now() - bag.prime_bridge_binary_debug_at) / 1000)
-      : '?';
-    $('hint').textContent = `Binary debug скопійовано ✓ (${rows.length} кадрів, ${age}s тому)`;
+    $('hint').textContent = `Binary debug ✓ (${rows.length} кадрів)`;
   } catch (e) {
-    $('hint').textContent = 'Clipboard заблоковано — відкрийте DevTools → __PRIME_BRIDGE_BINARY_DEBUG__';
+    $('hint').textContent = 'Clipboard blocked';
     console.log(json);
   }
 });
 
 $('save').addEventListener('click', async () => {
-  await chrome.storage.local.set({
-    backendUrl: $('backendUrl').value.trim() || DEFAULTS.backendUrl,
-    secret: $('secret').value.trim() || DEFAULTS.secret,
-  });
+  const url = baseUrl();
+  $('backendUrl').value = url;
+  await chrome.storage.local.set({ backendUrl: url, secret: secret() });
   $('status').textContent = 'Збережено ✓';
-  setTimeout(renderLive, 500);
+  setTimeout(renderLive, 300);
 });
 
 setInterval(renderLive, 1000);
