@@ -17,7 +17,7 @@ import {
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 4000;
+const ANALYSIS_MIN_MS = 3500;
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -213,17 +213,21 @@ export function SignalModal() {
     if (!opts?.keepMultiplier) setMartingaleMultiplier(1);
     settledRef.current = false;
     useAppStore.setState({ signalCurrentPrice: null });
+    setSignalPhase('loading');
+    setLoadingStep(0);
+    setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
 
-    await runAnalysisAnimation();
-
     try {
-      const result = await api.generateSignal({
-        assetId: selectedAsset.id,
-        symbol: selectedAsset.symbol,
-        timeframe: selectedTimeframe,
-        isOTC: selectedAsset.isOTC,
-      });
+      const [result] = await Promise.all([
+        api.generateSignal({
+          assetId: selectedAsset.id,
+          symbol: selectedAsset.symbol,
+          timeframe: selectedTimeframe,
+          isOTC: selectedAsset.isOTC,
+        }),
+        runAnalysisAnimation(),
+      ]);
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
@@ -445,11 +449,14 @@ export function SignalModal() {
           )}
 
           {signalPhase === 'loading' && (
-            <SignalAnalysisLoader
-              steps={[...t.loading]}
-              activeStep={Math.min(loadingStep, t.loading.length - 1)}
-              title={loadingTitle || t.analyzingMarket}
-            />
+            <>
+              <SignalAnalysisLoader
+                steps={[...t.loading]}
+                activeStep={Math.min(loadingStep, t.loading.length - 1)}
+                title={loadingTitle || t.analyzingMarket}
+              />
+              <p className="mt-2 text-center text-[11px] text-prime-gold/80">{t.fetchingLivePrice}</p>
+            </>
           )}
 
           {signalPhase === 'result' && signalResult && (

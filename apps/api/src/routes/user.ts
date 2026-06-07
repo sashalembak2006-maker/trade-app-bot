@@ -230,8 +230,13 @@ router.get('/assets/:symbol/price', async (req, res) => {
       if (live != null) {
         price = live;
       } else {
-        const waitMs = Math.min(Number(req.query.waitMs) || 3000, 8000);
-        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+        const quote = provider.getBridgeQuote(symbol, 8_000);
+        if (quote != null) {
+          price = quote;
+        } else {
+          const waitMs = Math.min(Number(req.query.waitMs) || 1500, 5000);
+          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: true });
+        }
       }
     } else {
       price = await provider.getAssetPrice(symbol);
@@ -310,7 +315,7 @@ router.post('/signals/generate', async (req, res) => {
     }
   }
 
-  const waitMs = Number(process.env.SIGNAL_PRICE_WAIT_MS ?? 4_000);
+  const waitMs = Number(process.env.SIGNAL_PRICE_WAIT_MS ?? 2_500);
   if (getMarketMode() === 'platform') {
     requestFocus(symbol, waitMs + 30_000);
   }
@@ -320,13 +325,14 @@ router.post('/signals/generate', async (req, res) => {
   try {
     payout = await provider.getPayout(symbol);
     if (provider instanceof BridgeMarketDataProvider) {
-      if (provider.hasLivePrice(symbol)) {
+      const quote = provider.getBridgeQuote(symbol, 45_000);
+      if (quote != null) {
+        price = quote;
+      } else if (provider.hasLivePrice(symbol)) {
         price = await provider.getAssetPrice(symbol);
       } else {
-        log.info('Waiting for live price', { symbol, waitMs, hybrid: isBridgeSyntheticFallbackEnabled() });
-        price = await provider.waitForLivePrice(symbol, waitMs, {
-          allowSynthetic: isBridgeSyntheticFallbackEnabled(),
-        });
+        log.info('Waiting for live price', { symbol, waitMs });
+        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: true });
       }
     } else {
       price = await provider.getAssetPrice(symbol);

@@ -148,7 +148,7 @@ export const api = {
       method: 'POST',
       body: '{}',
     }),
-  getAssets: () => fetchJson<AssetsResponse>('/api/assets'),
+  getAssets: () => fetchJson<AssetsResponse>('/api/assets', { timeoutMs: 6000 }),
   requestFocus: (symbol: string, ttlMs?: number) =>
     fetchJson<{ ok: boolean; symbol: string }>('/api/focus', {
       method: 'POST',
@@ -161,12 +161,12 @@ export const api = {
     ),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
   generateSignal: (body: Record<string, unknown>) =>
-    fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 20000 }),
+    fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 12000 }),
   calculate: (body: Record<string, unknown>) =>
     fetchJson<CalculatorResult>('/api/calculator', { method: 'POST', body: JSON.stringify(body) }),
-  getNews: () => fetchJson<NewsItem[]>('/api/news'),
-  getIndicators: () => fetchJson<IndicatorInfo[]>('/api/indicators'),
-  getLearning: () => fetchJson<LearningArticle[]>('/api/learning'),
+  getNews: () => fetchJson<NewsItem[]>('/api/news', { timeoutMs: 6000 }),
+  getIndicators: () => fetchJson<IndicatorInfo[]>('/api/indicators', { timeoutMs: 6000 }),
+  getLearning: () => fetchJson<LearningArticle[]>('/api/learning', { timeoutMs: 6000 }),
   vipRequest: () => fetchJson('/api/vip-request', { method: 'POST', body: '{}' }),
 };
 

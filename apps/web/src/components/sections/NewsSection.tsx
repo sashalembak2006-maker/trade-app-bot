@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
 import type { NewsItem } from '../../types';
+import { NEWS as BUNDLED_NEWS } from '../../data/content';
 
 function renderBody(text: string) {
   return text.split('\n').map((line, i) => {
@@ -31,22 +32,9 @@ export function NewsSection() {
   const [selected, setSelected] = useState<NewsItem | null>(null);
 
   useEffect(() => {
-    setLoading(true);
-    api
-      .getNews()
-      .then(setNews)
-      .catch(async () => {
-        try {
-          const res = await fetch('/content-fallback.json');
-          if (res.ok) {
-            const data = (await res.json()) as { news?: NewsItem[] };
-            setNews(data.news ?? []);
-          }
-        } catch {
-          setNews([]);
-        }
-      })
-      .finally(() => setLoading(false));
+    setNews(BUNDLED_NEWS as NewsItem[]);
+    setLoading(false);
+    void api.getNews().then(setNews).catch(() => {});
   }, []);
 
   if (loading) {

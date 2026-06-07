@@ -290,6 +290,12 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         if (Date.now() >= deadline) {
           clearInterval(interval);
           unsub();
+          const latest = this.assets.get(symbol);
+          const quote = latest ? this.displayPrice(latest) : null;
+          if (quote != null) {
+            resolve(quote);
+            return;
+          }
           if (allowSynthetic && syntheticFallbackEnabled && this.assets.has(symbol)) {
             resolve(this.applySynthetic(symbol));
             return;
@@ -298,6 +304,17 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         }
       }, 200);
     });
+  }
+
+  /** Latest PO quote from bridge (widget/catalog/stream) — not synthetic. */
+  getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
+    const a = this.assets.get(symbol);
+    if (!a) return null;
+    const display = this.displayPrice(a);
+    if (display == null) return null;
+    const age = Date.now() - (a.priceUpdatedAt || a.updatedAt || 0);
+    if (maxAgeMs > 0 && age > maxAgeMs) return null;
+    return display;
   }
 
   /** Live bridge tick only — never synthetic (for signal settlement). */

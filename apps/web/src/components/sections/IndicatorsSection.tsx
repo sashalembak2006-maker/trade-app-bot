@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
 import type { IndicatorInfo } from '../../types';
+import { INDICATORS as BUNDLED_INDICATORS } from '../../data/content';
 
 function renderContent(text: string) {
   return text.split('\n').map((line, i) => {
@@ -30,22 +31,9 @@ export function IndicatorsSection() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    api
-      .getIndicators()
-      .then(setIndicators)
-      .catch(async () => {
-        try {
-          const res = await fetch('/content-fallback.json');
-          if (res.ok) {
-            const data = (await res.json()) as { indicators?: IndicatorInfo[] };
-            setIndicators(data.indicators ?? []);
-          }
-        } catch {
-          setIndicators([]);
-        }
-      })
-      .finally(() => setLoading(false));
+    setIndicators(BUNDLED_INDICATORS as IndicatorInfo[]);
+    setLoading(false);
+    void api.getIndicators().then(setIndicators).catch(() => {});
   }, []);
 
   const selected = indicators.find((i) => i.id === selectedIndicatorId);

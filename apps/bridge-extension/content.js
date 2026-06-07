@@ -493,14 +493,12 @@
         wsAssets.set(a.symbol, withCategory({
           symbol: a.symbol,
           payout: a.payout,
-          price: prev?.price,
+          price: typeof a.price === 'number' ? a.price : prev?.price,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
+          live: prev?.live,
         }));
-        if (!lastKnownPrices.has(a.symbol) && prev?.price != null) {
-          rememberPrice(a.symbol, prev.price, a.payout);
-        }
       }
     }
     if (ev.data.type === 'stream' && typeof ev.data.price === 'number') {
@@ -1247,18 +1245,27 @@
   function syncDomAndWsCatalog() {
     for (const a of scrapeList()) {
       const prev = wsAssets.get(a.symbol);
-      if (a.price != null) rememberPrice(a.symbol, a.price, a.payout ?? prev?.payout);
+      const scrapedPrice =
+        a.price != null ? sanitizeWsPrice(a.price, a.symbol, a.payout ?? prev?.payout) : null;
+      const prevPrice = prev?.price;
+      const priceChanged =
+        scrapedPrice != null && prevPrice != null && scrapedPrice !== prevPrice;
+      if (scrapedPrice != null) rememberPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout);
       wsAssets.set(
         a.symbol,
         withCategory({
           ...prev,
           ...a,
           payout: a.payout ?? prev?.payout,
-          price: a.price ?? prev?.price,
-          category: a.category ?? prev?.category,
+          price: scrapedPrice ?? prev?.price,
+          live: scrapedPrice != null ? true : prev?.live,
           timestamp: Date.now(),
         }),
       );
+      if (priceChanged && scrapedPrice != null) {
+        const entry = wsAssets.get(a.symbol);
+        if (entry) wsAssets.set(a.symbol, { ...entry, live: true, timestamp: Date.now() });
+      }
     }
   }
 

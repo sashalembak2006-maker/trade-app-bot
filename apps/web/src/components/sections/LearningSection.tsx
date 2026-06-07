@@ -4,6 +4,7 @@ import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
 import type { LearningArticle } from '../../types';
+import { LEARNING as BUNDLED_LEARNING } from '../../data/content';
 
 function renderContent(text: string) {
   return text.split('\n').map((line, i) => {
@@ -31,22 +32,12 @@ export function LearningSection() {
   const [tab, setTab] = useState<'basics' | 'books'>('basics');
 
   useEffect(() => {
-    setLoading(true);
-    api
+    setArticles(BUNDLED_LEARNING as LearningArticle[]);
+    setLoading(false);
+    void api
       .getLearning()
       .then(setArticles)
-      .catch(async () => {
-        try {
-          const res = await fetch('/content-fallback.json');
-          if (res.ok) {
-            const data = (await res.json()) as { learning?: LearningArticle[] };
-            setArticles(data.learning ?? []);
-          }
-        } catch {
-          setArticles([]);
-        }
-      })
-      .finally(() => setLoading(false));
+      .catch(() => { /* keep bundled */ });
   }, []);
 
   const filtered = articles.filter((a) => a.tab === tab);
