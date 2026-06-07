@@ -1,0 +1,3 @@
+# Marker file for watchPatterns in apps/api and apps/bot railway.toml.
+# Do not delete — prevents duplicate @trade-app/* GitHub deploys.
+# Production deploys only via the prime-trade service (root railway.toml).

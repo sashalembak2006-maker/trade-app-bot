@@ -18,15 +18,11 @@ else
   echo "→ RAILWAY_TOKEN знайдено"
 fi
 
-echo ""
-echo "→ Обери: Link an existing project"
-echo "→ Проєкт: rare-rebirth (або твій)"
-echo "→ Сервіс: prime-trade  (НЕ @trade-app/api!)"
-echo ""
-$CLI link || true
+echo "→ Link rare-rebirth / prime-trade"
+$CLI link -p rare-rebirth -s prime-trade 2>/dev/null || $CLI link || true
 
-echo "→ Deploy..."
-$CLI up --detach
+echo "→ Deploy prime-trade (NOT @trade-app/api)"
+$CLI up --detach --service prime-trade
 
 echo ""
 echo "✓ Готово. Чекай 3–5 хв → Railway → prime-trade → SUCCESS"

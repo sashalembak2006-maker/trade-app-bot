@@ -1,8 +1,15 @@
-# Railway @trade-app/api — root directory має бути КОРІНЬ репо (не apps/api)
-# Settings → Config-as-code → path: apps/api/railway.toml
+# DEPRECATED — use prime-trade service (root railway.toml + Dockerfile.railway).
+# Production URL: https://prime-trade-production.up.railway.app
+#
+# Railway Settings for @trade-app/api (if kept):
+#   Root Directory = / (repo root, NOT apps/api)
+#   Config-as-code path = apps/api/railway.toml
+#
+# Auto-deploy disabled: only prime-trade should deploy on git push.
 
 [build]
 builder = "NIXPACKS"
+watchPatterns = [".railway-no-deploy"]
 buildCommand = "npm ci && npm run build -w @trade-app/shared && npm run build -w @trade-app/api && npm run db:generate -w @trade-app/api"
 
 [deploy]
