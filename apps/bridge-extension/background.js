@@ -177,6 +177,8 @@ function ingestCatalogAssets(assets) {
   const now = Date.now();
   for (const a of assets || []) {
     if (!a?.symbol || typeof a.payout !== 'number') continue;
+    if (!/\sOTC$/i.test(a.symbol)) continue;
+    if (!/^[A-Z]{3}\/[A-Z]{3}/i.test(String(a.symbol).replace(/\s+OTC$/i, ''))) continue;
     const prev = catalogAssets.get(a.symbol);
     const next = {
       symbol: a.symbol,
@@ -186,8 +188,12 @@ function ingestCatalogAssets(assets) {
       timestamp: a.timestamp ?? prev?.timestamp ?? now,
       lastSeen: now,
     };
-    if (isReasonablePrice(a.price, a.symbol)) next.price = a.price;
-    else if (prev?.price != null) next.price = prev.price;
+    if (isReasonablePrice(a.price, a.symbol)) {
+      next.price = a.price;
+      if (prev?.price != null && prev.price !== a.price) next.live = true;
+    } else if (prev?.price != null) next.price = prev.price;
+    if (a.live === true) next.live = true;
+    if (a.synthetic === true) next.synthetic = true;
     catalogAssets.set(a.symbol, next);
   }
   for (const [sym, a] of catalogAssets) {
@@ -229,6 +235,8 @@ function mergeFrameAssets() {
     if (entry.activeSymbol) activeSymbol = entry.activeSymbol;
     for (const a of entry.assets || []) {
       if (!a.symbol || typeof a.payout !== 'number') continue;
+      if (!/\sOTC$/i.test(a.symbol)) continue;
+      if (!/^[A-Z]{3}\/[A-Z]{3}/i.test(String(a.symbol).replace(/\s+OTC$/i, ''))) continue;
       const prev = merged.get(a.symbol);
       const next = {
         symbol: a.symbol,
@@ -239,9 +247,12 @@ function mergeFrameAssets() {
       };
       if (isReasonablePrice(a.price, a.symbol)) {
         next.price = a.price;
+        if (prev?.price != null && prev.price !== a.price) next.live = true;
       } else if (prev?.price != null) {
         next.price = prev.price;
       }
+      if (a.live === true) next.live = true;
+      if (a.synthetic === true) next.synthetic = true;
       merged.set(a.symbol, next);
     }
   }
@@ -258,6 +269,8 @@ function mergeFrameAssets() {
       category: live.category ?? a.category,
       isOTC: live.isOTC ?? a.isOTC,
       timestamp: live.timestamp ?? a.timestamp,
+      live: live.live === true ? true : a.live,
+      synthetic: live.synthetic === true ? true : a.synthetic,
       lastSeen: Date.now(),
     };
   });
@@ -504,6 +517,14 @@ async function postAssets(assets, activeSymbol) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg?.type) return false;
 
+  if (msg.type === 'bridge-po-auth' && msg.frame) {
+    chrome.storage.local.set({
+      poAuthFrame: String(msg.frame),
+      poAuthCapturedAt: msg.at ?? Date.now(),
+    });
+    return false;
+  }
+
   if (msg.type === 'bridge-frame-data') {
     const key = `${sender.tab?.id ?? 'x'}:${sender.frameId ?? 0}`;
     frameData.set(key, {
@@ -650,7 +671,7 @@ async function pollFocus() {
   }
 }
 
-setInterval(pollFocus, 3000);
+setInterval(pollFocus, 800);
 syncRelayWithPoTabs().catch(() => {});
 
 /** Service worker POST loop — do not rely on relay tab (throttled when hidden). */

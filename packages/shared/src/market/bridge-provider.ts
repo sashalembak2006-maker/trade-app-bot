@@ -17,7 +17,7 @@ import {
   NoLivePriceError,
   type MarketDataProvider,
 } from './provider.js';
-import { isPlausibleMarketPrice } from './price-validation.js';
+import { isPlausibleMarketPrice, isForexOtcSymbol } from './price-validation.js';
 import { SyntheticPriceEngine } from './synthetic-price.js';
 import { resolveAssetFlags } from './asset-flags.js';
 import { normalizeAssetCategory, resolveAssetCategory } from './asset-category.js';
@@ -113,16 +113,23 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     return null;
   }
 
-  /** Quote usable for signal entry — live bridge tick only (never catalog pulse). */
+  /** Quote for signal — live tick first, then fresh display price when hybrid fallback on. */
   private bridgeQuotePrice(a: StoredAsset): number | null {
-    if (!this.isBridgeLive(a)) return null;
-    if (
-      a.lastKnownPrice != null &&
-      isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
-    ) {
-      return a.lastKnownPrice;
+    if (this.isBridgeLive(a)) {
+      if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
+      if (
+        a.lastKnownPrice != null &&
+        isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
+      ) {
+        return a.lastKnownPrice;
+      }
     }
-    if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
+    if (syntheticFallbackEnabled) {
+      const display = this.displayPrice(a);
+      if (display != null && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt <= 30_000) {
+        return display;
+      }
+    }
     return null;
   }
 
@@ -196,12 +203,20 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     return next;
   }
 
-  /** Disabled — synthetic must not overwrite stored PO prices shown to users. */
+  /** Micro-ticks from last real PO price — keeps OTC list moving between bridge POSTs. */
   private refreshAllSyntheticPrices(): void {
-    return;
+    if (!syntheticFallbackEnabled || this.assets.size === 0) return;
+    const now = Date.now();
+    for (const [symbol, a] of this.assets) {
+      if (!isForexOtcSymbol(symbol)) continue;
+      if (this.isBridgeLive(a)) continue;
+      this.tickSyntheticSymbol(symbol, a, now);
+    }
   }
+
   private ensureSyntheticTimer(): void {
-    return;
+    if (this.syntheticTimer || !syntheticFallbackEnabled) return;
+    this.syntheticTimer = setInterval(() => this.refreshAllSyntheticPrices(), SYNTHETIC_TICK_MS);
   }
 
   private ensureAnchoredPulseTimer(): void {
@@ -322,17 +337,31 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     });
   }
 
-  /** Latest live PO quote from bridge — never catalog pulse or synthetic. */
+  /** Latest PO quote — live tick or fresh display from bridge. */
   getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
     const a = this.assets.get(symbol);
     if (!a) return null;
     const quote = this.bridgeQuotePrice(a);
-    if (quote == null) return null;
-    if (maxAgeMs > 0) {
-      const age = Date.now() - a.bridgeLiveAt;
-      if (age > maxAgeMs) return null;
+    if (quote != null) {
+      if (maxAgeMs > 0 && a.bridgeLiveAt > 0 && Date.now() - a.bridgeLiveAt > maxAgeMs) {
+        const display = this.displayPrice(a);
+        if (
+          display != null &&
+          a.priceUpdatedAt > 0 &&
+          Date.now() - a.priceUpdatedAt <= maxAgeMs
+        ) {
+          return display;
+        }
+        return null;
+      }
+      return quote;
     }
-    return quote;
+    const display = this.displayPrice(a);
+    if (display == null) return null;
+    if (maxAgeMs > 0 && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt > maxAgeMs) {
+      return null;
+    }
+    return display;
   }
 
   /** Live bridge tick only — never synthetic (for signal settlement). */
@@ -349,6 +378,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
 
     for (const a of input) {
       if (!a.symbol || typeof a.payout !== 'number') continue;
+      if (!isForexOtcSymbol(a.symbol)) continue;
       const isOTC = a.isOTC ?? /otc/i.test(a.symbol);
       const prev = this.assets.get(a.symbol);
       const rawPrice = typeof a.price === 'number' ? a.price : null;
@@ -500,7 +530,9 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       this.ensureSyntheticTimer();
       this.refreshAllSyntheticPrices();
     }
-    return Array.from(this.assets.values()).map((a) => {
+    return Array.from(this.assets.values())
+      .filter((a) => isForexOtcSymbol(a.symbol))
+      .map((a) => {
       const display = this.displayPrice(a);
       return {
       id: a.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),

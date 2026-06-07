@@ -28,6 +28,7 @@ async function renderLive() {
     'lastPostSuccessAt', 'lastPostError',
     'lastAsset', 'lastPrice', 'lastPayout', 'lastHost', 'lastPath',
     'lastFrame', 'lastScrapeCount',
+    'poAuthFrame', 'poAuthCapturedAt',
   ]);
 
   const heartbeatOk = isRecent(data.lastHeartbeatAt, 15000);
@@ -71,6 +72,14 @@ async function renderLive() {
   $('lastPrice').textContent = data.lastPrice != null ? String(data.lastPrice) : '—';
   $('lastPayout').textContent = data.lastPayout != null ? data.lastPayout + '%' : '—';
   $('hint').textContent = hint;
+  const authEl = $('authHint');
+  if (authEl) {
+    if (data.poAuthFrame && isRecent(data.poAuthCapturedAt, 7 * 24 * 3600 * 1000)) {
+      authEl.textContent = `PO auth ✓ збережено ${new Date(data.poAuthCapturedAt).toLocaleString('uk-UA')}`;
+    } else {
+      authEl.textContent = 'PO auth: F12 → Network → WS → перше 42["auth",…] після входу';
+    }
+  }
 }
 
 $('test').addEventListener('click', async () => {
@@ -98,6 +107,23 @@ $('test').addEventListener('click', async () => {
     $('hint').textContent = `FAIL: ${e.message}`;
   }
   renderLive();
+});
+
+$('copyAuth').addEventListener('click', async () => {
+  const bag = await chrome.storage.local.get({ poAuthFrame: '', poAuthCapturedAt: 0 });
+  const frame = bag.poAuthFrame || '';
+  if (!frame) {
+    $('authHint').textContent = 'Auth ще не перехоплено — увійдіть у PO demo (F5), зачекайте 5 сек';
+    return;
+  }
+  const envLine = `PO_AUTH_MESSAGE=${frame}`;
+  try {
+    await navigator.clipboard.writeText(envLine);
+    $('authHint').textContent = 'PO_AUTH_MESSAGE скопійовано ✓ → Railway Variables або VPS collector';
+  } catch {
+    console.log(envLine);
+    $('authHint').textContent = 'Див. console (clipboard blocked)';
+  }
 });
 
 $('copyBinary').addEventListener('click', async () => {

@@ -675,6 +675,14 @@
   const origSend = Orig.prototype.send;
   Orig.prototype.send = function (...args) {
     wrapWsInstance(this);
+    try {
+      const text = typeof args[0] === 'string' ? args[0] : '';
+      if (text.startsWith('42["auth"') || /42\["auth"/.test(text)) {
+        post('po-auth', { frame: text.slice(0, 4000), at: Date.now() });
+      }
+    } catch {
+      /* ignore */
+    }
     return origSend.apply(this, args);
   };
 

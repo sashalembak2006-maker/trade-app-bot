@@ -19,6 +19,13 @@ import { serializeUser, hasAppAccess, hasVipAccess, hasLimitedAccess, hasSignalA
 const router = Router();
 const signalEngine = new SignalEngine();
 
+const focusGraceMs = () =>
+  Math.min(Math.max(Number(process.env.SIGNAL_FOCUS_GRACE_MS) || 2800, 1500), 5000);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 router.use(resolveTelegramUser);
 
 function readHeader(req: { headers: Record<string, unknown> }, key: string): string | undefined {
@@ -235,7 +242,9 @@ router.get('/assets/:symbol/price', async (req, res) => {
           price = quote;
         } else {
           const waitMs = Math.min(Number(req.query.waitMs) || 1500, 5000);
-          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+          price = await provider.waitForLivePrice(symbol, waitMs, {
+            allowSynthetic: isBridgeSyntheticFallbackEnabled(),
+          });
         }
       }
     } else {
@@ -316,11 +325,12 @@ router.post('/signals/generate', async (req, res) => {
   }
 
   const waitMs = Math.min(
-    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 4_000, 1_500),
-    8_000,
+    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 10_000, 3_000),
+    12_000,
   );
   if (getMarketMode() === 'platform') {
-    requestFocus(symbol, waitMs + 30_000);
+    requestFocus(symbol, waitMs + 45_000);
+    await sleep(focusGraceMs());
   }
 
   let price: number;
@@ -334,11 +344,15 @@ router.post('/signals/generate', async (req, res) => {
       } else {
         log.info('Waiting for live price', { symbol, waitMs });
         try {
-          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+          price = await provider.waitForLivePrice(symbol, waitMs, {
+            allowSynthetic: isBridgeSyntheticFallbackEnabled(),
+          });
         } catch (waitErr) {
-          const fallback = provider.getBridgeQuote(symbol, 15_000);
+          const fallback = provider.getBridgeQuote(symbol, 20_000);
           if (fallback != null) {
             price = fallback;
+          } else if (isBridgeSyntheticFallbackEnabled()) {
+            price = await provider.getAssetPrice(symbol);
           } else {
             throw waitErr;
           }

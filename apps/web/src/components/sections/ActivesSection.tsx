@@ -7,9 +7,7 @@ import { formatPercentChange } from '../../utils/format';
 import type { AssetCategory } from '../../types';
 import { AssetIcon } from '../ui/AssetIcon';
 
-const CATEGORIES: (AssetCategory | 'favorite' | 'all')[] = [
-  'all', 'forex', 'forex_otc', 'crypto', 'stocks', 'commodities', 'indices', 'favorite',
-];
+const CATEGORIES: (AssetCategory | 'favorite' | 'all')[] = ['all', 'forex_otc', 'favorite'];
 
 export function ActivesSection() {
   const { assets, searchQuery, activeCategory, setActiveCategory, setSelectedAsset, language, toggleFavorite } = useAppStore();

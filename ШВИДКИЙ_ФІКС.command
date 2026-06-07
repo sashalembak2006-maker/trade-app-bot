@@ -45,7 +45,7 @@ $CLI up --detach --service "$SERVICE"
 
 echo ""
 echo "✓ Готово. Далі:"
-echo "  1. chrome://extensions → PRIME TRADE → Reload (v2.1.1)"
+echo "  1. chrome://extensions → PRIME TRADE → Reload (v2.1.3)"
 echo "  2. Pocket Option demo відкрита на ПК"
 echo "  3. Закрий/відкрий Mini App в Telegram"
 echo ""

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AccessStatus } from '../services/api';
 import { AccessGate } from './AccessGate';
+import { WelcomeSplash, hasSeenWelcome } from '../components/onboarding/WelcomeSplash';
 import { GoldBackground } from '../components/layout/GoldBackground';
 import { GoldParticles } from '../components/layout/GoldParticles';
 import { Header } from '../components/layout/Header';
@@ -33,6 +34,7 @@ interface MainAppProps {
 export function MainApp({ limited = false, access, telegramId, apiError, onRefreshAccess }: MainAppProps) {
   const { language, setAssets, marketStatus, setMarketStatus, accessStatus } = useAppStore();
   const [showRegistration, setShowRegistration] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcome(telegramId));
   const effectiveLimited = limited || !accessStatus?.hasAppAccess;
   const t = useT(language);
   useWebSocket();
@@ -119,6 +121,13 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
 
   return (
     <div className="relative min-h-full bg-prime-bg">
+      {showWelcome && (
+        <WelcomeSplash
+          language={language}
+          telegramId={telegramId}
+          onDone={() => setShowWelcome(false)}
+        />
+      )}
       <GoldBackground />
       <GoldParticles />
 

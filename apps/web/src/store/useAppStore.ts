@@ -64,7 +64,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchQuery: '',
   assets: [],
   selectedAsset: null,
-  activeCategory: 'all',
+  activeCategory: 'forex_otc',
   selectedTimeframe: '1m',
   signalPhase: 'idle',
   signalResult: null,

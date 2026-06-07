@@ -161,7 +161,7 @@ export const api = {
     ),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
   generateSignal: (body: Record<string, unknown>) =>
-    fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 12000 }),
+    fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 25000 }),
   calculate: (body: Record<string, unknown>) =>
     fetchJson<CalculatorResult>('/api/calculator', { method: 'POST', body: JSON.stringify(body) }),
   getNews: () => fetchJson<NewsItem[]>('/api/news', { timeoutMs: 6000 }),

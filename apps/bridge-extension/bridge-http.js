@@ -26,6 +26,11 @@ const BridgeHttp = (() => {
         if (typeof a.price === 'number' && Number.isFinite(a.price) && a.price > 0) {
           row.price = a.price;
         }
+        if (a.live === true) row.live = true;
+        if (a.synthetic === true) row.synthetic = true;
+        if (typeof a.timestamp === 'number' && Number.isFinite(a.timestamp)) {
+          row.timestamp = a.timestamp;
+        }
         return row;
       });
   }

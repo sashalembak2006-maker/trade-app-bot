@@ -18,8 +18,28 @@ import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
 const ANALYSIS_MIN_MS = 3500;
-const SIGNAL_REQUEST_TIMEOUT_MS = 12_000;
-const LOADING_WATCHDOG_MS = 14_000;
+const SIGNAL_REQUEST_TIMEOUT_MS = 24_000;
+const LOADING_WATCHDOG_MS = 28_000;
+const FOCUS_POLL_MS = 350;
+const FOCUS_POLLS = 12;
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** Switch PO chart to symbol and wait for bridge live price (exact PO tick). */
+async function waitForBridgeFocus(symbol: string): Promise<void> {
+  await api.requestFocus(symbol, 90_000);
+  for (let i = 0; i < FOCUS_POLLS; i++) {
+    await delay(FOCUS_POLL_MS);
+    try {
+      const live = await api.getLivePrice(symbol, 2500);
+      if (live.price != null && live.price > 0) return;
+    } catch {
+      /* bridge still switching chart */
+    }
+  }
+}
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -229,16 +249,19 @@ export function SignalModal() {
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
-    void api.requestFocus(selectedAsset.symbol, 45_000).catch(() => {});
 
-    const signalRequest = api.generateSignal({
-      assetId: selectedAsset.id,
-      symbol: selectedAsset.symbol,
-      timeframe: selectedTimeframe,
-      isOTC: selectedAsset.isOTC,
-    });
+    const signalPromise = (async () => {
+      await waitForBridgeFocus(selectedAsset.symbol);
+      return api.generateSignal({
+        assetId: selectedAsset.id,
+        symbol: selectedAsset.symbol,
+        timeframe: selectedTimeframe,
+        isOTC: selectedAsset.isOTC,
+      });
+    })();
+
     const signalWithTimeout = Promise.race([
-      signalRequest,
+      signalPromise,
       new Promise<never>((_, reject) => {
         setTimeout(
           () => reject(Object.assign(new Error(t.errorTimeout), { code: 'TIMEOUT' }) as ApiError),
@@ -471,12 +494,29 @@ export function SignalModal() {
 
           {signalPhase === 'loading' && (
             <>
-              <SignalAnalysisLoader
-                steps={[...t.loading]}
-                activeStep={Math.min(loadingStep, t.loading.length - 1)}
-                title={loadingTitle || t.analyzingMarket}
-              />
-              <p className="mt-2 text-center text-[11px] text-prime-gold/80">{t.fetchingLivePrice}</p>
+              {signalError ? (
+                <div className="mb-4 rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-center">
+                  <span className="text-3xl">⚠️</span>
+                  <p className="mt-2 text-sm font-bold text-red-300">{signalError}</p>
+                  <p className="mt-1 text-xs text-slate-400">{t.errorRetryHint}</p>
+                  <button
+                    type="button"
+                    onClick={handleRetry}
+                    className="mt-4 w-full rounded-xl border border-white/10 py-3 text-sm font-semibold text-white hover:bg-white/5"
+                  >
+                    {t.tryAgain}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <SignalAnalysisLoader
+                    steps={[...t.loading]}
+                    activeStep={Math.min(loadingStep, t.loading.length - 1)}
+                    title={loadingTitle || t.analyzingMarket}
+                  />
+                  <p className="mt-2 text-center text-[11px] text-prime-gold/80">{t.fetchingLivePrice}</p>
+                </>
+              )}
             </>
           )}
 

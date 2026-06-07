@@ -127,7 +127,7 @@
   let wsActiveSymbol = null;
 
   function rememberPrice(symbol, price, payout) {
-    const p = sanitizeWsPrice(price, symbol, payout);
+    const p = sanitizeWsPrice(price, symbol, payout) ?? sanitizePrice(price, symbol, payout, null);
     if (p != null) lastKnownPrices.set(symbol, p);
   }
 
@@ -186,7 +186,36 @@
     };
   }
 
+  function isForexOtcSymbol(symbol) {
+    const s = String(symbol || '').trim();
+    if (!/\sOTC$/i.test(s)) return false;
+    return /^[A-Z]{3}\/[A-Z]{3}$/i.test(s.replace(/\s+OTC$/i, '').trim());
+  }
+
+  function forexCrossBand(symbol) {
+    const core = String(symbol || '').replace(/\s+OTC$/i, '').trim().toUpperCase();
+    const m = core.match(/^([A-Z]{3})\/([A-Z]{3})$/);
+    if (!m) return null;
+    const base = m[1];
+    const quote = m[2];
+    if (quote === 'JPY' || base === 'JPY') return { min: 0.003, max: 400 };
+    if (base === 'AED' && quote === 'CNY') return { min: 1.7, max: 2.6 };
+    if (quote === 'CNY' && base !== 'USD') return { min: 0.4, max: 3.2 };
+    if (base === 'EUR' && quote === 'USD') return { min: 0.82, max: 1.38 };
+    if (base === 'GBP' && quote === 'USD') return { min: 1.05, max: 1.55 };
+    if (base === 'AUD' && quote === 'USD') return { min: 0.5, max: 0.92 };
+    if (base === 'NZD' && quote === 'USD') return { min: 0.45, max: 0.85 };
+    if (base === 'USD' && quote === 'CAD') return { min: 1.1, max: 1.65 };
+    if (base === 'USD' && quote === 'CHF') return { min: 0.72, max: 1.08 };
+    if (base === 'EUR' && quote === 'GBP') return { min: 0.78, max: 0.98 };
+    if (base === 'AUD' && quote === 'CAD') return { min: 0.82, max: 1.05 };
+    if (base === 'AUD' && quote === 'NZD') return { min: 1.0, max: 1.25 };
+    return { min: 0.35, max: 2.25 };
+  }
+
   function priceRangeForSymbol(symbol) {
+    const fx = forexCrossBand(symbol);
+    if (fx) return fx;
     const s = (symbol || '').toUpperCase();
     if (/BTC|ETH|LTC|XRP|SOL|ADA|DOT|DOGE|BNB|AVAX|MATIC|LINK|BCH/.test(s)) {
       return { min: 0.0001, max: 500_000 };
@@ -202,7 +231,7 @@
     if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(plain) && !/^[A-Z]{3}\/[A-Z]{3}$/.test(plain)) {
       return { min: 0.5, max: 100_000 };
     }
-    if (/JPY/.test(s)) return { min: 40, max: 500 };
+    if (/JPY/.test(s) && !/[A-Z]{3}\/[A-Z]{3}/.test(s.replace(/\s+OTC$/, ''))) return { min: 40, max: 500 };
     if (/CLP|COP|IDR|VND|KRW|HUF|NGN|PYG|IRR|IQD|VEF/.test(s)) {
       return { min: 0.01, max: 100_000 };
     }
@@ -484,16 +513,20 @@
       for (const a of ev.data.assets) {
         if (!a?.symbol || typeof a.payout !== 'number' || a.payout < 1 || a.payout > 100) continue;
         const prev = wsAssets.get(a.symbol);
+        const nextPrice = typeof a.price === 'number' ? a.price : prev?.price;
         wsAssets.set(a.symbol, withCategory({
           symbol: a.symbol,
           payout: a.payout,
-          price: typeof a.price === 'number' ? a.price : prev?.price,
+          price: nextPrice,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
-          live: prev?.live,
+          live: a.live === true ? true : prev?.live,
         }));
       }
+    }
+    if (ev.data.type === 'po-auth' && ev.data.frame) {
+      sendMessageSafe({ type: 'bridge-po-auth', frame: ev.data.frame, at: ev.data.at ?? Date.now() });
     }
     if (ev.data.type === 'stream' && typeof ev.data.price === 'number') {
       let sym = ev.data.symbol;
@@ -1073,11 +1106,10 @@
         if (price != null) {
           rememberPrice(row.symbol, price, row.payout);
           row.price = price;
-          if (
-            row.symbol === activeSymbol ||
-            (wsEntry?.live === true && wsFresh)
-          ) {
+          if (row.live === true || (wsEntry?.live === true && wsFresh)) {
             row.live = true;
+          } else {
+            delete row.live;
           }
         } else {
           delete row.price;
@@ -1155,6 +1187,19 @@
 
     let assets = Array.from(bySymbol.values());
 
+    for (const [symbol, pulse] of catalogPulsePrices) {
+      if (!isForexOtcSymbol(symbol)) continue;
+      const idx = assets.findIndex((a) => a.symbol === symbol);
+      if (idx < 0) continue;
+      if (assets[idx].live === true) continue;
+      assets[idx] = {
+        ...assets[idx],
+        price: pulse.price,
+        synthetic: true,
+        timestamp: pulse.timestamp ?? Date.now(),
+      };
+    }
+
     if (assets.length === 0) {
       assets = scrapeTradingFallback();
     }
@@ -1171,7 +1216,7 @@
       }
     }
 
-    assets = finalizeAssets(assets, resolvedActive);
+    assets = finalizeAssets(assets, resolvedActive).filter((a) => isForexOtcSymbol(a.symbol));
     return { assets, activeSymbol: resolvedActive, activePayload };
   }
 
@@ -1237,10 +1282,7 @@
     for (const a of scrapeList()) {
       const prev = wsAssets.get(a.symbol);
       const scrapedPrice =
-        a.price != null ? sanitizeWsPrice(a.price, a.symbol, a.payout ?? prev?.payout) : null;
-      const prevPrice = prev?.price;
-      const priceChanged =
-        scrapedPrice != null && prevPrice != null && scrapedPrice !== prevPrice;
+        a.price != null ? sanitizePrice(a.price, a.symbol, a.payout ?? prev?.payout, null) : null;
       if (scrapedPrice != null) rememberPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout);
       wsAssets.set(
         a.symbol,
@@ -1249,7 +1291,7 @@
           ...a,
           payout: a.payout ?? prev?.payout,
           price: scrapedPrice ?? prev?.price,
-          live: prev?.live === true ? true : false,
+          live: a.live === true ? true : prev?.live === true,
           timestamp: Date.now(),
         }),
       );
@@ -1354,14 +1396,9 @@
     return false;
   }
 
-  /** PO sends updateAssets only for the open catalog tab — rotate tabs to collect forex/crypto/stocks. */
+  /** Only Currencies OTC tab — user wants forex OTC pairs only. */
   const CATEGORY_TAB_RULES = [
     { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc|^otc$/i, label: 'forex_otc' },
-    { re: /^currencies$|^валюти$|^валюты$|^forex$|^currency$/i, label: 'forex' },
-    { re: /crypto|крипт|криптовалют|bitcoin|біткоїн/i, label: 'crypto' },
-    { re: /stocks|акці|акци|акцій|company/i, label: 'stocks' },
-    { re: /commodit|товар|gold|срібл|нафта|oil/i, label: 'commodities' },
-    { re: /indic|індекс|индекс|index|s&p|nasdaq|dji/i, label: 'indices' },
   ];
 
   function getAssetPanelRoots() {
@@ -1413,7 +1450,7 @@
     return found;
   }
 
-  const CATEGORY_ROTATE_MS = 2800;
+  const CATEGORY_ROTATE_MS = 4000;
   let categoryTabIndex = 0;
 
   function rotateCategoryTab() {
@@ -1484,14 +1521,17 @@
           if (typeof row.click === 'function') row.click();
           wsActiveSymbol = sym;
           console.log('[PRIME Bridge] focus click →', sym);
-          setTimeout(tick, 300);
+          setTimeout(tick, 200);
+          setTimeout(tick, 600);
+          setTimeout(tick, 1200);
           return true;
         }
       }
       return false;
     };
     if (attempt()) return true;
-    setTimeout(attempt, 900);
+    setTimeout(attempt, 500);
+    setTimeout(attempt, 1200);
     return false;
   }
 
