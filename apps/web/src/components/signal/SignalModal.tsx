@@ -251,17 +251,23 @@ export function SignalModal() {
       if (Date.now() < expiryMs) return;
       if (settledRef.current) return;
 
-      let exitPrice: number | null = null;
+      let exitPrice: number | null =
+        useAppStore.getState().signalCurrentPrice ?? signalResult.entryPrice;
+
       try {
-        const live = await api.getLivePrice(signalResult.symbol);
-        exitPrice = live.price;
+        const livePrice = await Promise.race([
+          api.getLivePrice(signalResult.symbol, 800).then((r) => r.price),
+          new Promise<number | null>((resolve) => setTimeout(() => resolve(null), 2500)),
+        ]);
+        if (livePrice != null && livePrice > 0) exitPrice = livePrice;
       } catch {
         const a = useAppStore.getState().assets.find((x) => x.symbol === signalResult.symbol);
-        exitPrice = a?.price ?? a?.lastKnownPrice ?? useAppStore.getState().signalCurrentPrice;
+        exitPrice = a?.price ?? a?.lastKnownPrice ?? exitPrice;
       }
       finalize(exitPrice);
     };
 
+    void trySettle();
     const id = setInterval(() => void trySettle(), 250);
     return () => clearInterval(id);
   }, [signalPhase, signalResult, martingaleMultiplier, setSettlement, setSignalPhase]);

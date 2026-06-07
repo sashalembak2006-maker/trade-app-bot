@@ -404,8 +404,8 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         // Active pair heartbeat without a new tick — keep previous live price fresh.
         priceUpdatedAt = now;
         bridgeLiveAt = now;
-      } else if (validPrice != null && !isSyntheticPulse) {
-        // Catalog/DOM snapshot — refresh display anchor (not live stream).
+      } else if ((validPrice != null || validLkp != null) && !isSyntheticPulse) {
+        // Catalog/DOM snapshot or WS catalog quote — refresh display anchor (not live stream).
         priceUpdatedAt = a.timestamp ?? now;
         if (isFocused) bridgeLiveAt = now;
       }
@@ -413,14 +413,22 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       const effectivePrice = isLiveTick
         ? validPrice
         : isFocused
-          ? (validPrice ?? prevLive)
+          ? (validPrice ?? validLkp ?? prevLive)
           : isSyntheticPulse
             ? prevLive
-            : (validPrice ?? prevLive);
+            : (validPrice ?? validLkp ?? prevLive);
       const prevForChange = prev?.price ?? prev?.lastKnownPrice;
       let change = prev?.change ?? 0;
       if (validPrice != null && prevForChange != null && prevForChange > 0 && validPrice !== prevForChange) {
         change = roundChangePct(((validPrice - prevForChange) / prevForChange) * 100);
+      } else if (
+        validLkp != null &&
+        validPrice == null &&
+        prevForChange != null &&
+        prevForChange > 0 &&
+        validLkp !== prevForChange
+      ) {
+        change = roundChangePct(((validLkp - prevForChange) / prevForChange) * 100);
       }
 
       let nextLastKnown =
@@ -459,8 +467,9 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
 
       let emitPrice =
         validPrice ??
+        validLkp ??
         (effectivePrice != null && (this.isBridgeLive(stored) || isFocused) ? effectivePrice : null);
-      if (emitPrice == null && lastKnownUpdated && stored.lastKnownPrice != null) {
+      if (emitPrice == null && stored.lastKnownPrice != null) {
         const display = this.displayPrice(stored);
         if (display != null) emitPrice = display;
       }

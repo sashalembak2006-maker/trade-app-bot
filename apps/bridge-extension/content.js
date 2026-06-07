@@ -131,6 +131,32 @@
     if (p != null) lastKnownPrices.set(symbol, p);
   }
 
+  /** PO catalog quote for hybrid micro-ticks on Railway (not live WS). */
+  function attachLastKnownPrice(entry) {
+    if (!entry?.symbol) return entry;
+    const payout = entry.payout;
+    const fromEntry =
+      typeof entry.lastKnownPrice === 'number'
+        ? sanitizeWsPrice(entry.lastKnownPrice, entry.symbol, payout) ??
+          sanitizePrice(entry.lastKnownPrice, entry.symbol, payout, null)
+        : null;
+    const fromMap = lastKnownPrices.get(entry.symbol);
+    const fromStored =
+      fromMap != null
+        ? sanitizeWsPrice(fromMap, entry.symbol, payout) ??
+          sanitizePrice(fromMap, entry.symbol, payout, null)
+        : null;
+    const lkp = fromEntry ?? fromStored;
+    if (lkp != null) {
+      entry.lastKnownPrice = lkp;
+      rememberPrice(entry.symbol, lkp, payout);
+      if (entry.live !== true && entry.price == null) {
+        entry.price = lkp;
+      }
+    }
+    return entry;
+  }
+
   /** Plausible base when PO has payout only (anchored hybrid — not random each tick). */
   function seededBasePrice(symbol) {
     const s = String(symbol || '').toUpperCase();
@@ -515,15 +541,20 @@
         const prev = wsAssets.get(a.symbol);
         const lkp =
           typeof a.lastKnownPrice === 'number'
-            ? sanitizeWsPrice(a.lastKnownPrice, a.symbol, a.payout)
+            ? sanitizeWsPrice(a.lastKnownPrice, a.symbol, a.payout) ??
+              sanitizePrice(a.lastKnownPrice, a.symbol, a.payout, null)
             : null;
         if (lkp != null) rememberPrice(a.symbol, lkp, a.payout);
-        const nextPrice = typeof a.price === 'number' ? a.price : prev?.price;
+        const nextPrice =
+          typeof a.price === 'number'
+            ? a.price
+            : lkp ?? prev?.price ?? lastKnownPrices.get(a.symbol) ?? null;
+        if (typeof nextPrice === 'number') rememberPrice(a.symbol, nextPrice, a.payout);
         wsAssets.set(a.symbol, withCategory({
           symbol: a.symbol,
           payout: a.payout,
           price: nextPrice,
-          lastKnownPrice: lkp ?? prev?.lastKnownPrice,
+          lastKnownPrice: lkp ?? prev?.lastKnownPrice ?? lastKnownPrices.get(a.symbol) ?? null,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
@@ -1125,11 +1156,15 @@
           }
           row.lastKnownPrice = lastKnownPrices.get(row.symbol) ?? price;
         } else {
-          delete row.price;
           delete row.live;
           const remembered = lastKnownPrices.get(row.symbol);
-          row.lastKnownPrice =
-            remembered != null && isValidPrice(row.symbol, remembered, row.payout) ? remembered : null;
+          if (remembered != null && isValidPrice(row.symbol, remembered, row.payout)) {
+            row.price = remembered;
+            row.lastKnownPrice = remembered;
+          } else {
+            delete row.price;
+            row.lastKnownPrice = null;
+          }
         }
         return row;
       });
@@ -1160,6 +1195,7 @@
         entry.price = p;
         if (a.live === true) entry.live = true;
       }
+      attachLastKnownPrice(entry);
       bySymbol.set(a.symbol, entry);
     }
 
@@ -1175,6 +1211,7 @@
         price: a.price ?? prev?.price,
         live: a.live === true ? true : prev?.live,
       }));
+      attachLastKnownPrice(bySymbol.get(a.symbol));
     }
 
     let activePayload = null;
@@ -1316,11 +1353,13 @@
         continue;
       }
       const anchor = resolveCatalogAnchor(symbol, entry.payout);
-      lastKnownPrices.set(symbol, anchor);
-      wsAssets.set(symbol, {
-        ...entry,
-        lastKnownPrice: anchor,
-      });
+      if (anchor != null) {
+        lastKnownPrices.set(symbol, anchor);
+        wsAssets.set(symbol, {
+          ...entry,
+          lastKnownPrice: anchor,
+        });
+      }
     }
   }
 

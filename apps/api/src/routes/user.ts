@@ -4,6 +4,7 @@ import {
   BridgeMarketDataProvider,
   calculateMartingale,
   isBridgeSyntheticFallbackEnabled,
+  isPlausibleMarketPrice,
   NEWS,
   INDICATORS,
   LEARNING,
@@ -377,6 +378,14 @@ router.post('/signals/generate', async (req, res) => {
 
   if (!price || price <= 0) {
     return res.status(422).json({ error: 'No live price for asset', code: 'NO_PRICE' });
+  }
+
+  if (!isPlausibleMarketPrice(price, symbol)) {
+    clearFocus(symbol);
+    return res.status(422).json({
+      error: 'No live price for asset — open this pair on Pocket Option trading chart',
+      code: 'NO_PRICE',
+    });
   }
 
   const result = signalEngine.generate({
