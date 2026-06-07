@@ -1,0 +1,13 @@
+# Railway — сервіс API (створіть окремий сервіс у проєкті Railway)
+# Dashboard → Service → Settings → Dockerfile Path: Dockerfile
+# Variables → RAILWAY_DOCKERFILE_TARGET = api
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
