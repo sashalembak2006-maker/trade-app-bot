@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { patchBigIntJson } from './utils/json.js';
 patchBigIntJson();
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
@@ -55,11 +56,18 @@ const webDist = process.env.WEB_DIST_PATH
   ? path.resolve(process.env.WEB_DIST_PATH)
   : path.resolve(__dirname, '../../web/dist');
 if (process.env.NODE_ENV === 'production' || process.env.SERVE_WEB === 'true') {
-  app.use(express.static(webDist));
-  app.get(/^(?!\/api).*/, (_req, res) => {
-    res.sendFile(path.join(webDist, 'index.html'));
-  });
-  log.info('Serving Mini App static files', { webDist });
+  const indexHtml = path.join(webDist, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    app.use(express.static(webDist));
+    app.get(/^(?!\/api).*/, (_req, res, next) => {
+      res.sendFile(indexHtml, (err) => {
+        if (err) next(err);
+      });
+    });
+    log.info('Serving Mini App static files', { webDist });
+  } else {
+    log.warn('Mini App dist missing — static routes disabled', { webDist, indexHtml });
+  }
 }
 
 // Last-resort error handler — never leak stack traces, always JSON.
