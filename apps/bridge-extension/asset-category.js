@@ -31,6 +31,9 @@
 
     if (COMMODITIES.has(base)) return 'commodities';
 
+    // PO: "American Express OTC", "Boeing Company OTC"
+    if (/\s+OTC$/i.test(key) && !isForexPair(base)) return 'stocks';
+
     if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(base) && !isForexPair(base)) return 'stocks';
 
     return otc ? 'forex_otc' : 'forex';

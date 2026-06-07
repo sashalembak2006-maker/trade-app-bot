@@ -228,7 +228,14 @@ async function postAssets(assets, activeSymbol) {
       assets.map((a) => [a.symbol, a.price ?? null, a.payout]),
     );
     const now = Date.now();
-    if (payloadKey === lastPostedKey && now - lastPostedAt < MIN_POST_MS) return;
+    if (payloadKey === lastPostedKey && now - lastPostedAt < MIN_POST_MS) {
+      await chrome.storage.local.set({
+        backendReachable: true,
+        backendReachableAt: now,
+        lastHeartbeatAt: now,
+      });
+      return;
+    }
 
     const cfg = await getConfig();
     if (!cfg.secret) {

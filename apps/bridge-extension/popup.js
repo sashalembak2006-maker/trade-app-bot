@@ -47,7 +47,10 @@ async function renderLive() {
   } else if (heartbeatOk && !backendUp) {
     statusText = 'Status: Backend offline';
     box.className = 'status bad';
-    hint = 'Подвійний клік ЗАПУСК.bat у папці проєкту → НЕ закривайте вікно API → Перевірити backend';
+    hint =
+      data.lastStatus && !/ЗАПУСК\.bat/i.test(data.lastStatus)
+        ? `${data.lastStatus} — Перевірити backend`
+        : 'Перевірте Backend URL + Secret → кнопка «Перевірити backend». Railway має бути online.';
   } else if (heartbeatOk) {
     statusText = 'Status: Scraping…';
     box.className = 'status warn';

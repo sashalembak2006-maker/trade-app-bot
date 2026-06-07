@@ -527,12 +527,18 @@
   function looksLikeSymbol(s) {
     if (!s) return false;
     const t = s.replace(/\s+/g, ' ').trim();
-    if (t.length < 3 || t.length > 32) return false;
-    if (/method|deposit|bonus|profile|setting|payment|withdraw/i.test(t)) return false;
-    return (
-      /[A-Z]{2,6}\/[A-Z]{2,6}(\s+OTC)?/i.test(t) ||
-      /^(BTC|ETH|GOLD|SILVER|OIL|AAPL|TSLA|GOOG|AMZN|MSFT|NVDA)(\s+OTC)?$/i.test(t)
-    );
+    if (t.length < 3 || t.length > 64) return false;
+    if (/method|deposit|bonus|profile|setting|payment|withdraw|quick|high|low|trade/i.test(t)) {
+      return false;
+    }
+    if (/[A-Z]{2,6}\/[A-Z]{2,6}(\s+OTC)?/i.test(t)) return true;
+    if (/^(BTC|ETH|GOLD|SILVER|OIL|AAPL|TSLA|GOOG|AMZN|MSFT|NVDA)(\s+OTC)?$/i.test(t)) {
+      return true;
+    }
+    // PO stocks/indices: "American Express OTC", "Boeing Company OTC", "S&P 500 OTC"
+    if (/\s+OTC$/i.test(t) && !/[A-Z]{3}\/[A-Z]{3}/.test(t)) return true;
+    if (/^(S&P|S&P 500|NASDAQ|DJI30|FTSE|GOLD|SILVER|OIL|NAT\.GAS)/i.test(t)) return true;
+    return false;
   }
 
   /** True on chart / quick trading — NOT the account dashboard (/cabinet only). */
@@ -641,21 +647,36 @@
 
   function extractSymbolFromText(text) {
     if (!text) return null;
-    const m = text.match(/([A-Z]{2,6}\/[A-Z]{2,6}(?:\s+OTC)?|(?:BTC|ETH|GOLD|SILVER)[^%\n]{0,12})/i);
+    const m = text.match(
+      /([A-Z]{2,6}\/[A-Z]{2,6}(?:\s+OTC)?|(?:BTC|ETH|GOLD|SILVER|OIL|AAPL|TSLA)[^%\n]{0,12})/i,
+    );
     if (m) return normalizeSymbol(m[1].trim());
+    const stock = text.match(/([A-Za-z0-9][A-Za-z0-9\s.&'/-]{2,52}\s+OTC)/i);
+    if (stock) return normalizeSymbol(stock[1].trim());
     return null;
   }
 
+  function cleanListName(name) {
+    if (!name) return null;
+    return normalizeSymbol(
+      name
+        .replace(/\s+/g, ' ')
+        .replace(/\s+\d{1,3}%\s*$/, '')
+        .trim(),
+    );
+  }
+
   function findSymbolInRow(row) {
-    let name = pickText(row, LIST_NAME_SELECTORS);
-    if (name && looksLikeSymbol(name)) return normalizeSymbol(name);
+    let name = cleanListName(pickText(row, LIST_NAME_SELECTORS));
+    if (name && looksLikeSymbol(name)) return name;
     const fromText = extractSymbolFromText(row.textContent || '');
     if (fromText && looksLikeSymbol(fromText)) return fromText;
     const lines = (row.textContent || '').split('\n').map((l) => l.trim()).filter(Boolean);
     for (const line of lines) {
-      if (looksLikeSymbol(line)) return normalizeSymbol(line);
+      const cleaned = cleanListName(line);
+      if (cleaned && looksLikeSymbol(cleaned)) return cleaned;
       const sym = extractSymbolFromText(line);
-      if (sym) return sym;
+      if (sym && looksLikeSymbol(sym)) return sym;
     }
     return null;
   }
@@ -705,11 +726,24 @@
       document.querySelectorAll(sel).forEach(addRow);
     }
 
-    // Fallback: left sidebar / catalog containers on Pocket Option.
     document
       .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="assets-list"]')
       .forEach((container) => {
-        container.querySelectorAll('[class*="item"], li, a').forEach(addRow);
+        container.querySelectorAll('[class*="item"], li, a, tr').forEach(addRow);
+      });
+
+    // PO stocks panel: rows with "Company Name OTC" + payout %
+    document
+      .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="asset-select"], [class*="modal"]')
+      .forEach((panel) => {
+        panel.querySelectorAll('[class*="item"], li, a, tr, div[class*="row"]').forEach((row) => {
+          const text = (row.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!/\s+OTC/i.test(text)) return;
+          const sym = extractSymbolFromText(text);
+          const payout = parsePayout(text);
+          if (!sym || !isValidPayout(payout)) return;
+          out.set(sym, withCategory({ symbol: sym, payout, isOTC: true, timestamp: Date.now() }));
+        });
       });
 
     for (const a of scrapeViaPayoutNearby()) {
@@ -1197,16 +1231,33 @@
     { re: /indic|індекс|индекс/i, label: 'indices' },
   ];
 
+  function getAssetPanelRoots() {
+    const roots = new Set();
+    document
+      .querySelectorAll(
+        '.assets-block, .alist, [class*="assets-block"], [class*="assets-list"], [class*="asset-select"]',
+      )
+      .forEach((el) => roots.add(el));
+    for (const sel of LIST_ROW_SELECTORS) {
+      document.querySelectorAll(sel).forEach((row) => {
+        const panel = row.closest(
+          '.assets-block, .alist, [class*="assets-block"], [class*="assets-list"], [class*="asset-select"]',
+        );
+        if (panel) roots.add(panel);
+      });
+    }
+    return roots.size ? Array.from(roots) : [document.body];
+  }
+
   function findCategoryTabs() {
     const found = [];
     const seen = new Set();
     const seenLabels = new Set();
-    const searchRoots = [document.body];
-    for (const root of searchRoots) {
-      root.querySelectorAll('button, a, [role="tab"], li, span, div').forEach((el) => {
+    for (const root of getAssetPanelRoots()) {
+      root.querySelectorAll('button, a, [role="tab"], li').forEach((el) => {
         if (seen.has(el)) return;
         const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!text || text.length > 48 || text.length < 3) return;
+        if (!text || text.length > 32 || text.length < 3) return;
         for (const rule of CATEGORY_TAB_RULES) {
           if (rule.re.test(text) && !seenLabels.has(rule.label)) {
             seen.add(el);

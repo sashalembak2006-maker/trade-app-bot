@@ -56,7 +56,9 @@ export function resolveAssetCategory(symbol: string, isOTC = /otc/i.test(symbol)
 
   if (COMMODITY_NAMES.has(base)) return 'commodities';
 
-  // Single-word tickers: stocks (AAPL, TSLA) — not forex XXX/YYY.
+  // PO company names: "American Express OTC", "Boeing Company OTC"
+  if (/\s+OTC$/i.test(key) && !isForexPair(base)) return 'stocks';
+
   if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(base) && !isForexPair(base)) return 'stocks';
 
   return isOTC ? 'forex_otc' : 'forex';
