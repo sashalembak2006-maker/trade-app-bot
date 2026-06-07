@@ -3,6 +3,7 @@ import type { BridgeAssetInput } from '@trade-app/shared';
 import { getBridgeProvider, getMarketMode, setMarketMode } from '../market.js';
 import { getFocus } from '../services/focus.js';
 import { onBridgeIngest } from '../services/bridge-status.js';
+import { isBridgeSecretConfigured, isBridgeSecretValid } from '../services/bridge-auth.js';
 import { log } from '../logger.js';
 
 const router = Router();
@@ -13,11 +14,10 @@ const router = Router();
  */
 router.post('/assets/update', (req, res) => {
   try {
-    const secret = process.env.BRIDGE_SECRET;
-    if (!secret) {
+    if (!isBridgeSecretConfigured()) {
       return res.status(503).json({ error: 'BRIDGE_SECRET not configured on server' });
     }
-    if (req.headers['x-bridge-secret'] !== secret) {
+    if (!isBridgeSecretValid(req.headers['x-bridge-secret'])) {
       log.warn('Bridge update rejected: bad secret');
       return res.status(401).json({ error: 'Unauthorized' });
     }
