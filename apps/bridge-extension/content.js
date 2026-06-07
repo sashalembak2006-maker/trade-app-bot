@@ -1288,12 +1288,8 @@
   }
 
   function startCategoryRotation() {
-    setTimeout(() => {
-      navigateToDemoIfNeeded();
-      ensureAssetCatalogOpen();
-    }, 1500);
-    setTimeout(rotateCategoryTab, 3000);
-    setInterval(rotateCategoryTab, 2500);
+    // Disabled: auto tab clicks broke PO WebSocket. Switch tabs manually on PO.
+    setTimeout(() => ensureAssetCatalogOpen(), 2000);
   }
 
   if (document.readyState === 'loading') {

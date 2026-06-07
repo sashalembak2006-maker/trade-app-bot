@@ -21,10 +21,12 @@ async function renderLive() {
     'lastFrame', 'lastScrapeCount',
   ]);
 
-  const heartbeatOk = isRecent(data.lastHeartbeatAt, 6000);
-  const backendOk = data.connected && isRecent(data.lastStatusAt, 6000);
+  const heartbeatOk = isRecent(data.lastHeartbeatAt, 12000);
+  const backendOk = data.connected && isRecent(data.lastStatusAt, 15000);
   const backendUp =
-    backendOk || (data.backendReachable && isRecent(data.backendReachableAt, 8000));
+    backendOk ||
+    (data.backendReachable && isRecent(data.backendReachableAt, 15000)) ||
+    (data.lastStatus && /^OK \(/i.test(data.lastStatus) && isRecent(data.lastStatusAt, 15000));
 
   const box = $('statusBox');
   let statusText = 'Status: Not connected';

@@ -11,6 +11,8 @@ let pendingPost = null;
 let lastPostedKey = '';
 let lastPostedAt = 0;
 const MIN_POST_MS = 400;
+/** Re-post unchanged payload so Railway keeps bridge.connected=true (server stale = 20s). */
+const KEEPALIVE_MS = 5000;
 
 function priceRangeForSymbol(symbol) {
   const s = (symbol || '').toUpperCase();
@@ -228,8 +230,20 @@ async function postAssets(assets, activeSymbol) {
       assets.map((a) => [a.symbol, a.price ?? null, a.payout]),
     );
     const now = Date.now();
-    if (payloadKey === lastPostedKey && now - lastPostedAt < MIN_POST_MS) {
+    const isDuplicate = payloadKey === lastPostedKey;
+    if (isDuplicate && now - lastPostedAt < MIN_POST_MS) {
       await chrome.storage.local.set({
+        connected: true,
+        backendReachable: true,
+        backendReachableAt: now,
+        lastHeartbeatAt: now,
+      });
+      return;
+    }
+    // Same data but server heartbeat would expire — send keepalive POST.
+    if (isDuplicate && now - lastPostedAt < KEEPALIVE_MS) {
+      await chrome.storage.local.set({
+        connected: true,
         backendReachable: true,
         backendReachableAt: now,
         lastHeartbeatAt: now,
@@ -404,3 +418,14 @@ async function pollFocus() {
 }
 
 setInterval(pollFocus, 500);
+
+/** Keep bridge.connected on server even when PO prices pause. */
+setInterval(async () => {
+  if (postInFlight) return;
+  const { assets, activeSymbol } = mergeFrameAssets();
+  if (assets.length > 0 && Date.now() - lastPostedAt >= KEEPALIVE_MS) {
+    await postAssets(assets, activeSymbol);
+  } else if (assets.length === 0) {
+    await pingBackend();
+  }
+}, KEEPALIVE_MS);
