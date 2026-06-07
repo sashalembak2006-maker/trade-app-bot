@@ -57,8 +57,19 @@
 
   function priceRangeForSymbol(symbol) {
     const s = (symbol || '').toUpperCase();
-    if (/BTC|ETH/.test(s)) return { min: 50, max: 500_000 };
-    if (/GOLD|XAU|SILVER|XAG/.test(s)) return { min: 10, max: 50_000 };
+    if (/BTC|ETH|LTC|XRP|SOL|ADA|DOT|DOGE|BNB|AVAX|MATIC|LINK|BCH/.test(s)) {
+      return { min: 0.0001, max: 500_000 };
+    }
+    if (/GOLD|XAU|SILVER|XAG|OIL|NAT\.GAS|PLATINUM|PALLADIUM|BRENT|WTI/.test(s)) {
+      return { min: 0.01, max: 50_000 };
+    }
+    if (/S&P|NASDAQ|DJI|DAX|FTSE|NIKKEI|CAC|ASX|INDEX/.test(s)) {
+      return { min: 10, max: 100_000 };
+    }
+    const plain = s.replace(/\s+OTC$/, '').trim();
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(plain) && !/^[A-Z]{3}\/[A-Z]{3}$/.test(plain)) {
+      return { min: 0.5, max: 100_000 };
+    }
     if (/JPY/.test(s)) return { min: 40, max: 500 };
     if (/CLP|COP|IDR|VND|KRW|HUF/.test(s)) return { min: 0.01, max: 100_000 };
     if (/INR|TRY|RUB|CNH|BRL|MXN/.test(s)) return { min: 0.01, max: 5_000 };

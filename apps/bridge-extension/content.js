@@ -125,8 +125,20 @@
 
   function priceRangeForSymbol(symbol) {
     const s = (symbol || '').toUpperCase();
-    if (/BTC|ETH/.test(s)) return { min: 50, max: 500_000 };
-    if (/GOLD|XAU|SILVER|XAG/.test(s)) return { min: 10, max: 50_000 };
+    if (/BTC|ETH|LTC|XRP|SOL|ADA|DOT|DOGE|BNB|AVAX|MATIC|LINK|BCH/.test(s)) {
+      return { min: 0.0001, max: 500_000 };
+    }
+    if (/GOLD|XAU|SILVER|XAG|OIL|NAT\.GAS|PLATINUM|PALLADIUM|BRENT|WTI/.test(s)) {
+      return { min: 0.01, max: 50_000 };
+    }
+    if (/S&P|NASDAQ|DJI|DAX|FTSE|NIKKEI|CAC|ASX|INDEX/.test(s)) {
+      return { min: 10, max: 100_000 };
+    }
+    // Stock tickers (AAPL, TSLA…) — not XXX/YYY forex pairs.
+    const plain = s.replace(/\s+OTC$/, '').trim();
+    if (/^[A-Z][A-Z0-9.-]{0,9}$/.test(plain) && !/^[A-Z]{3}\/[A-Z]{3}$/.test(plain)) {
+      return { min: 0.5, max: 100_000 };
+    }
     if (/JPY/.test(s)) return { min: 40, max: 500 };
     if (/CLP|COP|IDR|VND|KRW|HUF|NGN|PYG|IRR|IQD|VEF/.test(s)) {
       return { min: 0.01, max: 100_000 };
@@ -1112,6 +1124,66 @@
     document.addEventListener('DOMContentLoaded', startPriceObserver);
   } else {
     startPriceObserver();
+  }
+
+  /** PO sends updateAssets only for the open catalog tab — rotate tabs to collect forex/crypto/stocks. */
+  const CATEGORY_TAB_RULES = [
+    { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc/i, label: 'forex_otc' },
+    { re: /^currencies$|^валюти$|^валюты$|^forex$/i, label: 'forex' },
+    { re: /crypto|крипт|криптовалют/i, label: 'crypto' },
+    { re: /stocks|акці|акци/i, label: 'stocks' },
+    { re: /commodit|товар/i, label: 'commodities' },
+    { re: /indic|індекс|индекс/i, label: 'indices' },
+  ];
+
+  function findCategoryTabs() {
+    const found = [];
+    const seen = new Set();
+    const roots = document.querySelectorAll(
+      '.assets-block, .alist, [class*="assets-block"], [class*="assets-list"], [class*="asset-tabs"], [class*="catalog"]',
+    );
+    const searchRoots = roots.length ? Array.from(roots) : [document.body];
+    for (const root of searchRoots) {
+      root.querySelectorAll('button, a, [role="tab"], li, [class*="tab"], [class*="filter"]').forEach((el) => {
+        if (seen.has(el)) return;
+        const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text || text.length > 48) return;
+        for (const rule of CATEGORY_TAB_RULES) {
+          if (rule.re.test(text)) {
+            seen.add(el);
+            found.push({ el, text, label: rule.label });
+            break;
+          }
+        }
+      });
+    }
+    return found;
+  }
+
+  let categoryTabIndex = 0;
+  function rotateCategoryTab() {
+    const tabs = findCategoryTabs();
+    if (!tabs.length) return;
+    const tab = tabs[categoryTabIndex % tabs.length];
+    categoryTabIndex = (categoryTabIndex + 1) % tabs.length;
+    try {
+      tab.el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      if (typeof tab.el.click === 'function') tab.el.click();
+      console.log('[PRIME Bridge] category tab →', tab.text, `(${tab.label})`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function startCategoryRotation() {
+    setTimeout(rotateCategoryTab, 2500);
+    setInterval(rotateCategoryTab, 6000);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startCategoryRotation);
+  } else {
+    startCategoryRotation();
   }
 
   function tryFocusSymbol(targetSymbol) {
