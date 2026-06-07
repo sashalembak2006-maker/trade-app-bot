@@ -40,6 +40,8 @@ echo "→ Вмикаємо hybrid ціни + тимчасовий доступ (
 $CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=true" --service "$SERVICE"
 $CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service "$SERVICE"
 $CLI variables set "OPEN_ACCESS=true" --service "$SERVICE"
+$CLI variables set "SIGNAL_PRICE_WAIT_MS=4000" --service "$SERVICE"
+$CLI variables set "SIGNAL_FOCUS_GRACE_MS=1200" --service "$SERVICE"
 
 echo "→ Deploy локального коду на Railway (2–3 хв)..."
 $CLI up --detach --service "$SERVICE"

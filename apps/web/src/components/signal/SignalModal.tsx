@@ -18,27 +18,12 @@ import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
 const ANALYSIS_MIN_MS = 3500;
-const SIGNAL_REQUEST_TIMEOUT_MS = 35_000;
-const LOADING_WATCHDOG_MS = 38_000;
-const FOCUS_POLL_MS = 400;
-const FOCUS_POLLS = 5;
+const SIGNAL_REQUEST_TIMEOUT_MS = 50_000;
+const LOADING_WATCHDOG_MS = 55_000;
 
-function delay(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-/** Switch PO chart to symbol; best-effort wait for bridge quote (do not block signal). */
-async function waitForBridgeFocus(symbol: string): Promise<void> {
-  await api.requestFocus(symbol, 90_000);
-  for (let i = 0; i < FOCUS_POLLS; i++) {
-    await delay(FOCUS_POLL_MS);
-    try {
-      const live = await api.getLivePrice(symbol, 1500);
-      if (live.price != null && live.price > 0) return;
-    } catch {
-      /* bridge still switching chart */
-    }
-  }
+/** Fire focus in background — never block signal on PO chart switch. */
+function requestBridgeFocus(symbol: string): void {
+  void api.requestFocus(symbol, 90_000).catch(() => {});
 }
 
 function formatPrice(price: number) {
@@ -367,7 +352,7 @@ export function SignalModal() {
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
 
     const signalPromise = (async () => {
-      await waitForBridgeFocus(selectedAsset.symbol);
+      requestBridgeFocus(selectedAsset.symbol);
       return api.generateSignal({
         assetId: selectedAsset.id,
         symbol: selectedAsset.symbol,

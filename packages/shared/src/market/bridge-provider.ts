@@ -134,9 +134,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     }
     if (syntheticFallbackEnabled) {
       const display = this.displayPrice(a);
-      if (display != null && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt <= 30_000) {
-        return display;
-      }
+      if (display != null) return display;
     }
     return null;
   }
@@ -360,17 +358,15 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
     const a = this.assets.get(symbol);
     if (!a) return null;
+    if (syntheticFallbackEnabled) {
+      const hybrid = this.displayPrice(a);
+      if (hybrid != null) return hybrid;
+    }
     const quote = this.bridgeQuotePrice(a);
     if (quote != null) {
       if (maxAgeMs > 0 && a.bridgeLiveAt > 0 && Date.now() - a.bridgeLiveAt > maxAgeMs) {
         const display = this.displayPrice(a);
-        if (
-          display != null &&
-          a.priceUpdatedAt > 0 &&
-          Date.now() - a.priceUpdatedAt <= maxAgeMs
-        ) {
-          return display;
-        }
+        if (display != null) return display;
         return null;
       }
       return quote;
@@ -378,7 +374,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     const display = this.displayPrice(a);
     if (display == null) return null;
     if (maxAgeMs > 0 && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt > maxAgeMs) {
-      return null;
+      return syntheticFallbackEnabled ? display : null;
     }
     return display;
   }
