@@ -9,7 +9,7 @@ import { isAdmin, registerAdminHandlers } from './admin.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const token = process.env.BOT_TOKEN;
-const botDisplayName = process.env.BOT_DISPLAY_NAME ?? 'TRADE APP BOT';
+const botDisplayName = process.env.BOT_DISPLAY_NAME ?? 'PRIME TRADE BOT';
 const webAppUrl = process.env.WEBAPP_URL ?? 'https://prime-trade-bot.vercel.app';
 const pocketUrl = process.env.POCKET_REFERRAL_URL ?? 'https://pocketoption.com';
 const depositUrl = process.env.DEPOSIT_URL ?? pocketUrl;
@@ -64,10 +64,24 @@ async function isChannelMember(ctx: Context, userId: number): Promise<boolean> {
 
 function buildWelcomeCaption(): string {
   return (
-    `Ласкаво просимо до ${botDisplayName} — системи торгових сигналів на базі ШІ.\n\n` +
-    `📈 Точність алгоритму: до 87%\n` +
-    `⚡ Сигнали в режимі реального часу\n` +
-    `🔒 Захищений доступ\n\n` +
+    `Prime Trade | Bot\n` +
+    `Алгоритмічна система аналізу фінансових ринків 📊\n\n` +
+    `Інтелектуальний торговий бот нового покоління, що автоматично аналізує ринок і формує сигнали на основі статистичних моделей.\n\n` +
+    `Використовує:\n` +
+    `• 140+ індикаторів 📈\n` +
+    `• Структуру ціни та ринкові патерни\n` +
+    `• Алгоритмічний аналіз ліквідності\n\n` +
+    `Ринки:\n` +
+    `• 60+ валютних пар 💱\n` +
+    `• Криптовалюти ₿\n` +
+    `• Forex 🌍\n` +
+    `• Метали та індекси 📊\n\n` +
+    `Система:\n` +
+    `• 24/7 автоматичний аналіз\n` +
+    `• Сигнали входу/виходу\n` +
+    `• Контроль ризику\n` +
+    `• Дисципліна та точність\n\n` +
+    `Prime Trade | Bot\n\n` +
     `Оберіть дію нижче:`
   );
 }
