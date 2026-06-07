@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = [
+  "npm run build -w @trade-app/shared",
+  "npm run build -w @trade-app/api",
+  "npm run build -w @trade-app/bot",
+  "npm run db:generate -w @trade-app/api"
+]
+
+[start]
+cmd = "npm run start:railway"

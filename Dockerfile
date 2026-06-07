@@ -7,7 +7,7 @@ COPY apps/bot/package.json apps/bot/
 COPY apps/collector/package.json apps/collector/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN npm ci
+RUN npm install
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 COPY apps/bot apps/bot

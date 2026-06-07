@@ -121,4 +121,4 @@ REQUIRED_CHANNEL_URL=
 "@
 
 $allEnv | Set-Content (Join-Path $localDir 'railway-all.env') -Encoding UTF8
-Write-Host "  deploy/local/railway-all.env  (ONE service — use this)"
+Write-Host "  deploy/local/railway-all.env  (ONE service - use this)"
