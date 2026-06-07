@@ -1,13 +1,12 @@
-# Railway: сервіс @trade-app/api
-# Dashboard → Service → Settings → Config file path: apps/api/railway.toml
-# Додатково: Variable RAILWAY_DOCKERFILE_TARGET = api
+# Railway @trade-app/api — root directory має бути КОРІНЬ репо (не apps/api)
+# Settings → Config-as-code → path: apps/api/railway.toml
 
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-watchPatterns = ["apps/api/**", "packages/shared/**", "Dockerfile"]
+builder = "NIXPACKS"
+buildCommand = "npm ci && npm run build -w @trade-app/shared && npm run build -w @trade-app/api && npm run db:generate -w @trade-app/api"
 
 [deploy]
+startCommand = "npm run start:prod -w @trade-app/api"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

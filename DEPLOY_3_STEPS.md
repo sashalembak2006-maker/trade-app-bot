@@ -1,50 +1,47 @@
-# PRIME TRADE BOT — 3 кроки на Railway (для тих, хто не хоче розбиратись)
+# PRIME TRADE BOT — Railway (офлайн = не задеплоєно)
 
-## Крок 1 — Видали зайве (30 сек)
-
-У Railway видали сервіси:
-- **@trade-app/web** (сайт уже на Vercel)
-- **@trade-app/collector** (поки не треба)
-
-Залиш тільки **api** і **bot**.
+## Чому OFFLINE?
+1. **Не натиснув Deploy** або деплой **червоний** (помилка)
+2. **Мало змінних** — треба ~20 рядків з `deploy/local/api.env`, не 1!
+3. **Невірна команда старту** — має бути `npm run start:prod -w @trade-app/api`
 
 ---
 
-## Крок 2 — API (2 хв)
+## API — 4 кліки
 
-1. Клік **@trade-app/api** → **Variables** → **RAW Editor**
-2. Відкрий на ПК файл `deploy/local/api.env` — **скопіюй увесь вміст** → встав у RAW → Save
-3. Додай ще один рядок (якщо немає):
-   ```
-   RAILWAY_DOCKERFILE_TARGET=api
-   ```
-4. **Settings** → Config file: `apps/api/railway.toml`
-5. **Networking** → **Generate Domain** → скопіюй URL (напр. `https://xxx.up.railway.app`)
-6. **Settings** → **Volumes** → Add Volume → Mount path: `/app/apps/api/prisma`
+### 1. Variables (ОБОВʼЯЗКОВО)
+`@trade-app/api` → **Variables** → **RAW Editor**
 
----
+Відкрий на ПК: `deploy\local\api.env` → **Ctrl+A, Ctrl+C** → встав у Railway → Save
 
-## Крок 3 — Bot + Deploy (2 хв)
+У `BOT_TOKEN=` встав токен з `apps\bot\.env`
 
-1. Клік **@trade-app/bot** → **Variables** → **RAW Editor**
-2. Відкрий `deploy/local/bot.env` — скопіюй увесь вміст
-3. Заміни рядок `API_URL=...` на URL з кроку 2
-4. Додай: `RAILWAY_DOCKERFILE_TARGET=bot`
-5. **Settings** → Config file: `apps/bot/railway.toml`
-6. Зверху натисни **Deploy**
+### 2. Settings → Source
+- **Root Directory** = порожньо (корінь репо) або `/`
+- **Config file** = `apps/api/railway.toml`
 
----
-
-## Після деплою — напиши мені URL API
-
-Або сам на ПК:
-
-```powershell
-powershell -File scripts/update-runtime-config.ps1 -ApiUrl "https://ТВІЙ-URL.up.railway.app"
-git add apps/web/public/runtime-config.json
-git commit -m "Connect Mini App to Railway API"
-git push
+### 3. Settings → Deploy
+**Custom Start Command** = очисти або встав:
+```
+npm run start:prod -w @trade-app/api
 ```
 
-**Адмінка:** https://trade-app-bot.vercel.app/admin  
-Пароль у `deploy/local/api.env` → `ADMIN_PASSWORD`
+### 4. Deploy
+Фіолетова кнопка **Deploy** зверху. Чекай **зелений** статус.
+
+Потім **Networking** → **Generate Domain**.
+
+---
+
+## Bot
+Те саме з `deploy\local\bot.env` + `API_URL` = URL api.
+
+Config: `apps/bot/railway.toml`  
+Start: `npm run start -w @trade-app/bot`
+
+---
+
+## Перевірка
+`https://ТВІЙ-URL.up.railway.app/health` → `{"status":"ok"}`
+
+Скинь URL — підключимо Vercel.
