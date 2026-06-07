@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/bot/package.json apps/bot/
+COPY apps/collector/package.json apps/collector/
 COPY packages/shared/package.json packages/shared/
 
 RUN npm install --ignore-scripts
@@ -13,13 +14,15 @@ RUN npm install --ignore-scripts
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 COPY apps/bot apps/bot
+COPY apps/collector apps/collector
 COPY scripts/start-railway.sh scripts/start-railway.sh
 COPY railway.toml railway.toml
 
 RUN npm run db:generate -w @trade-app/api \
   && npm run build -w @trade-app/shared \
   && npm run build -w @trade-app/api \
-  && npm run build -w @trade-app/bot
+  && npm run build -w @trade-app/bot \
+  && npm run build -w @trade-app/collector
 
 ENV NODE_ENV=production
 EXPOSE 3001
