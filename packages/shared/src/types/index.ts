@@ -170,6 +170,8 @@ export interface BridgeAssetInput {
   price?: number | null;
   /** True when price is a real PO WebSocket/DOM tick (not extension catalog pulse). */
   live?: boolean;
+  /** Extension UI-only tick — must never drive signal entry or getBridgeQuote. */
+  synthetic?: boolean;
   payout: number;
   change?: number;
   category?: string;

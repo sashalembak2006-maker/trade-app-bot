@@ -18,6 +18,8 @@ import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
 const ANALYSIS_MIN_MS = 3500;
+const SIGNAL_REQUEST_TIMEOUT_MS = 12_000;
+const LOADING_WATCHDOG_MS = 14_000;
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -155,8 +157,18 @@ export function SignalModal() {
       setLoadingStep(step);
       if (step >= steps.length) clearInterval(interval);
     }, 800);
-    return () => clearInterval(interval);
-  }, [signalPhase, setLoadingStep, t.loading, t.analyzingMarket]);
+    const watchdog = setTimeout(() => {
+      if (useAppStore.getState().signalPhase !== 'loading') return;
+      logger.error('Signal', 'loading watchdog fired');
+      setSignalError(t.errorTimeout);
+      setSignalPhase('idle');
+      hapticFeedback('heavy');
+    }, LOADING_WATCHDOG_MS);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(watchdog);
+    };
+  }, [signalPhase, setLoadingStep, setSignalError, setSignalPhase, t.loading, t.analyzingMarket, t.errorTimeout]);
 
   const dataSourceBlocked =
     !!signalError &&
@@ -217,17 +229,26 @@ export function SignalModal() {
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
+    void api.requestFocus(selectedAsset.symbol, 45_000).catch(() => {});
+
+    const signalRequest = api.generateSignal({
+      assetId: selectedAsset.id,
+      symbol: selectedAsset.symbol,
+      timeframe: selectedTimeframe,
+      isOTC: selectedAsset.isOTC,
+    });
+    const signalWithTimeout = Promise.race([
+      signalRequest,
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(Object.assign(new Error(t.errorTimeout), { code: 'TIMEOUT' }) as ApiError),
+          SIGNAL_REQUEST_TIMEOUT_MS,
+        );
+      }),
+    ]);
 
     try {
-      const [result] = await Promise.all([
-        api.generateSignal({
-          assetId: selectedAsset.id,
-          symbol: selectedAsset.symbol,
-          timeframe: selectedTimeframe,
-          isOTC: selectedAsset.isOTC,
-        }),
-        runAnalysisAnimation(),
-      ]);
+      const [result] = await Promise.all([signalWithTimeout, runAnalysisAnimation()]);
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});

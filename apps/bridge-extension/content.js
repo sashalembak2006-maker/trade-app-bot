@@ -122,6 +122,8 @@
   let lastLogKey = '';
   const wsAssets = new Map();
   const lastKnownPrices = new Map();
+  /** Local UI-only ticks — never merged into bridge POST payload. */
+  const catalogPulsePrices = new Map();
   let wsActiveSymbol = null;
 
   function rememberPrice(symbol, price, payout) {
@@ -142,37 +144,29 @@
     return 0.45 + r * 1.8;
   }
 
-  /** Micro-tick ALL catalog prices before POST — Mini App sees live movement without backend redeploy. */
+  /**
+   * UI-only micro-ticks for catalog rows (NOT sent to API).
+   * Real signal entry prices must come from WS stream or DOM on the active chart.
+   */
   function pulseCatalogPrices(activeSymbol) {
     const now = Date.now();
     const WS_LIVE_MS = 3000;
     for (const [symbol, entry] of wsAssets) {
       if (!symbol || typeof entry?.payout !== 'number') continue;
       const isActive = activeSymbol && symbolsMatch(symbol, activeSymbol);
+      if (isActive) continue;
       const wsFresh =
         entry.live === true &&
         entry.timestamp != null &&
         now - entry.timestamp <= WS_LIVE_MS;
-      if (isActive && wsFresh) continue;
+      if (wsFresh) continue;
+      if (entry.live === true) continue;
       let base = lastKnownPrices.get(symbol) ?? entry.price;
-      if (base == null) {
-        base = seededBasePrice(symbol);
-        lastKnownPrices.set(symbol, base);
-      }
+      if (base == null) continue;
       const delta = (Math.random() - 0.5) * base * 0.004;
       let next = Math.round((base + delta) * 100_000) / 100_000;
       if (!isValidPrice(symbol, next, entry.payout)) next = base;
-      lastKnownPrices.set(symbol, next);
-      wsAssets.set(
-        symbol,
-        withCategory({
-          ...entry,
-          symbol,
-          price: next,
-          live: false,
-          timestamp: now,
-        }),
-      );
+      catalogPulsePrices.set(symbol, { price: next, timestamp: now, synthetic: true });
     }
   }
 
@@ -1073,11 +1067,7 @@
             const scraped = sanitizeWsPrice(row.price, row.symbol, row.payout);
             if (scraped != null) price = scraped;
           }
-          if (price == null && wsPrice != null) price = wsPrice;
-          if (price == null && lastKnownPrices.has(row.symbol)) {
-            const lkp = lastKnownPrices.get(row.symbol);
-            if (isValidPrice(row.symbol, lkp, row.payout)) price = lkp;
-          }
+          if (price == null && wsPrice != null && wsEntry?.live === true) price = wsPrice;
         }
 
         if (price != null) {
@@ -1101,6 +1091,7 @@
     const list = scrapeList();
     const activeSymbol = resolveActiveSymbol(list);
     syncDomAndWsCatalog();
+    pulseCatalogPrices(activeSymbol || wsActiveSymbol);
     const bySymbol = new Map();
 
     for (const a of wsAssets.values()) {
@@ -1258,14 +1249,10 @@
           ...a,
           payout: a.payout ?? prev?.payout,
           price: scrapedPrice ?? prev?.price,
-          live: scrapedPrice != null ? true : prev?.live,
+          live: prev?.live === true ? true : false,
           timestamp: Date.now(),
         }),
       );
-      if (priceChanged && scrapedPrice != null) {
-        const entry = wsAssets.get(a.symbol);
-        if (entry) wsAssets.set(a.symbol, { ...entry, live: true, timestamp: Date.now() });
-      }
     }
   }
 

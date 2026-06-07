@@ -235,7 +235,7 @@ router.get('/assets/:symbol/price', async (req, res) => {
           price = quote;
         } else {
           const waitMs = Math.min(Number(req.query.waitMs) || 1500, 5000);
-          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: true });
+          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
         }
       }
     } else {
@@ -315,7 +315,10 @@ router.post('/signals/generate', async (req, res) => {
     }
   }
 
-  const waitMs = Number(process.env.SIGNAL_PRICE_WAIT_MS ?? 2_500);
+  const waitMs = Math.min(
+    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 4_000, 1_500),
+    8_000,
+  );
   if (getMarketMode() === 'platform') {
     requestFocus(symbol, waitMs + 30_000);
   }
@@ -325,14 +328,21 @@ router.post('/signals/generate', async (req, res) => {
   try {
     payout = await provider.getPayout(symbol);
     if (provider instanceof BridgeMarketDataProvider) {
-      const quote = provider.getBridgeQuote(symbol, 45_000);
+      const quote = provider.getBridgeQuote(symbol, 12_000);
       if (quote != null) {
         price = quote;
-      } else if (provider.hasLivePrice(symbol)) {
-        price = await provider.getAssetPrice(symbol);
       } else {
         log.info('Waiting for live price', { symbol, waitMs });
-        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: true });
+        try {
+          price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+        } catch (waitErr) {
+          const fallback = provider.getBridgeQuote(symbol, 15_000);
+          if (fallback != null) {
+            price = fallback;
+          } else {
+            throw waitErr;
+          }
+        }
       }
     } else {
       price = await provider.getAssetPrice(symbol);
@@ -368,23 +378,24 @@ router.post('/signals/generate', async (req, res) => {
     requestFocus(symbol, Math.max(untilExpiry, 20_000));
   }
 
-  await prisma.signalHistory.create({
-    data: {
-      id: result.id,
-      userId: user.id,
-      assetSymbol: result.symbol,
-      direction: result.direction,
-      timeframe: result.timeframe,
-      entryPrice: result.entryPrice,
-      confidence: result.confidence,
-      payout: result.payout,
-      market: result.market,
-      expiresAt: new Date(result.expiresAt),
-    },
-  });
-
-  log.info('Signal generated', { user: user.id, symbol, direction: result.direction, payout });
   res.json(result);
+  log.info('Signal generated', { user: user.id, symbol, direction: result.direction, payout });
+  void prisma.signalHistory
+    .create({
+      data: {
+        id: result.id,
+        userId: user.id,
+        assetSymbol: result.symbol,
+        direction: result.direction,
+        timeframe: result.timeframe,
+        entryPrice: result.entryPrice,
+        confidence: result.confidence,
+        payout: result.payout,
+        market: result.market,
+        expiresAt: new Date(result.expiresAt),
+      },
+    })
+    .catch((err) => log.error('Signal history persist failed', err));
 });
 
 router.get('/signals/history', async (req, res) => {

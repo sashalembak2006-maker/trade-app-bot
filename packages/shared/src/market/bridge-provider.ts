@@ -113,6 +113,19 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     return null;
   }
 
+  /** Quote usable for signal entry — live bridge tick only (never catalog pulse). */
+  private bridgeQuotePrice(a: StoredAsset): number | null {
+    if (!this.isBridgeLive(a)) return null;
+    if (
+      a.lastKnownPrice != null &&
+      isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
+    ) {
+      return a.lastKnownPrice;
+    }
+    if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
+    return null;
+  }
+
   private applySynthetic(symbol: string): number {
     const prev = this.assets.get(symbol);
     const now = Date.now();
@@ -258,10 +271,13 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     options?: { allowSynthetic?: boolean },
   ): Promise<number> {
     this.requireConfigured();
+    const safeTimeout =
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.min(timeoutMs, 12_000) : 4_000;
     const allowSynthetic = options?.allowSynthetic ?? syntheticFallbackEnabled;
     const immediate = this.assets.get(symbol);
-    if (immediate && this.isLive(immediate) && immediate.price != null) {
-      return immediate.price;
+    if (immediate) {
+      const liveQuote = this.bridgeQuotePrice(immediate);
+      if (liveQuote != null) return liveQuote;
     }
     if (allowSynthetic && syntheticFallbackEnabled && immediate) {
       const display = this.displayPrice(immediate);
@@ -269,52 +285,54 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     }
 
     return new Promise((resolve, reject) => {
-      const deadline = Date.now() + timeoutMs;
-      const unsub = this.subscribe([symbol], (update) => {
-        if (update.symbol !== symbol) return;
+      const deadline = Date.now() + safeTimeout;
+      let settled = false;
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearInterval(interval);
+        unsub();
+        fn();
+      };
+      const unsub = this.subscribe([symbol], () => {
         const a = this.assets.get(symbol);
-        if (a && this.isLive(a) && a.price != null) {
-          clearInterval(interval);
-          unsub();
-          resolve(a.price);
-        }
+        if (!a) return;
+        const liveQuote = this.bridgeQuotePrice(a);
+        if (liveQuote != null) finish(() => resolve(liveQuote));
       });
       const interval = setInterval(() => {
         const a = this.assets.get(symbol);
-        if (a && this.isLive(a) && a.price != null) {
-          clearInterval(interval);
-          unsub();
-          resolve(a.price);
-          return;
+        if (a) {
+          const liveQuote = this.bridgeQuotePrice(a);
+          if (liveQuote != null) {
+            finish(() => resolve(liveQuote));
+            return;
+          }
         }
         if (Date.now() >= deadline) {
-          clearInterval(interval);
-          unsub();
-          const latest = this.assets.get(symbol);
-          const quote = latest ? this.displayPrice(latest) : null;
-          if (quote != null) {
-            resolve(quote);
-            return;
-          }
-          if (allowSynthetic && syntheticFallbackEnabled && this.assets.has(symbol)) {
-            resolve(this.applySynthetic(symbol));
-            return;
-          }
-          reject(new NoLivePriceError(`No live price for ${symbol} within ${timeoutMs}ms`));
+          finish(() => {
+            if (allowSynthetic && syntheticFallbackEnabled && this.assets.has(symbol)) {
+              resolve(this.applySynthetic(symbol));
+              return;
+            }
+            reject(new NoLivePriceError(`No live price for ${symbol} within ${safeTimeout}ms`));
+          });
         }
       }, 200);
     });
   }
 
-  /** Latest PO quote from bridge (widget/catalog/stream) — not synthetic. */
+  /** Latest live PO quote from bridge — never catalog pulse or synthetic. */
   getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
     const a = this.assets.get(symbol);
     if (!a) return null;
-    const display = this.displayPrice(a);
-    if (display == null) return null;
-    const age = Date.now() - (a.priceUpdatedAt || a.updatedAt || 0);
-    if (maxAgeMs > 0 && age > maxAgeMs) return null;
-    return display;
+    const quote = this.bridgeQuotePrice(a);
+    if (quote == null) return null;
+    if (maxAgeMs > 0) {
+      const age = Date.now() - a.bridgeLiveAt;
+      if (age > maxAgeMs) return null;
+    }
+    return quote;
   }
 
   /** Live bridge tick only — never synthetic (for signal settlement). */
@@ -344,27 +362,37 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         prev?.price != null && isPlausibleMarketPrice(prev.price, a.symbol) ? prev.price : null;
 
       const isFocused = normalizedActive != null && a.symbol === normalizedActive;
-      const isLiveTick = validPrice != null && (a.live === true || isFocused);
+      const isSyntheticPulse = a.synthetic === true;
+      const isLiveTick = validPrice != null && a.live === true && !isSyntheticPulse;
       let priceUpdatedAt = prev?.priceUpdatedAt ?? 0;
       let bridgeLiveAt = prev?.bridgeLiveAt ?? 0;
-      if (validPrice) {
+      if (isLiveTick) {
         priceUpdatedAt = a.timestamp ?? now;
-        if (isLiveTick) bridgeLiveAt = now;
-        this.synthetic.anchor(a.symbol, validPrice);
+        bridgeLiveAt = now;
+        this.synthetic.anchor(a.symbol, validPrice!);
       } else if (isFocused && prevLive != null) {
         // Active pair heartbeat without a new tick — keep previous live price fresh.
         priceUpdatedAt = now;
         bridgeLiveAt = now;
+      } else if (validPrice != null && !isSyntheticPulse) {
+        // Catalog/DOM snapshot — display only, must not drive live quote or signal entry.
+        priceUpdatedAt = a.timestamp ?? now;
       }
 
-      const effectivePrice = validPrice ?? prevLive;
+      const effectivePrice = isLiveTick
+        ? validPrice
+        : isFocused
+          ? prevLive
+          : isSyntheticPulse
+            ? prevLive
+            : (validPrice ?? prevLive);
       const prevForChange = prev?.price ?? prev?.lastKnownPrice;
       let change = prev?.change ?? 0;
       if (validPrice != null && prevForChange != null && prevForChange > 0 && validPrice !== prevForChange) {
         change = roundChangePct(((validPrice - prevForChange) / prevForChange) * 100);
       }
 
-      const nextLastKnown = validPrice ?? prevLkp ?? (effectivePrice ?? null);
+      const nextLastKnown = isLiveTick ? (validPrice ?? prevLkp) : prevLkp;
       const lastKnownUpdated = nextLastKnown != null && nextLastKnown !== prevLkp;
 
       const stored: StoredAsset = {
