@@ -1,11 +1,9 @@
 import { useMemo } from 'react';
-import { motion } from 'framer-motion';
 import { useAppStore } from '../../store/useAppStore';
 import { useT } from '../../i18n/translations';
 import { api } from '../../services/api';
-import { formatPercentChange } from '../../utils/format';
 import type { AssetCategory } from '../../types';
-import { AssetIcon } from '../ui/AssetIcon';
+import { AssetRow } from './AssetRow';
 
 const CATEGORIES: (AssetCategory | 'favorite' | 'all')[] = ['all', 'forex_otc', 'favorite'];
 
@@ -37,7 +35,9 @@ export function ActivesSection() {
             type="button"
             onClick={() => setActiveCategory(c)}
             className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-bold transition-all ${
-              activeCategory === c ? 'bg-neon-purple/30 text-neon-purple' : 'bg-white/5 text-slate-500'
+              activeCategory === c
+                ? 'border border-prime-gold/35 bg-prime-gold/15 text-prime-gold-light'
+                : 'border border-transparent bg-white/5 text-slate-500'
             }`}
           >
             {catLabel(c)}
@@ -47,67 +47,25 @@ export function ActivesSection() {
 
       <div className="space-y-2">
         {filtered.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-black/30 px-4 py-8 text-center">
+          <div className="rounded-2xl border border-dashed border-prime-gold/15 bg-black/30 px-4 py-8 text-center">
             <p className="text-sm font-semibold text-slate-400">{t.noAssetsYet}</p>
             <p className="mt-2 text-[11px] text-slate-600">{t.bridgeNotConnectedHint}</p>
           </div>
         )}
-        {filtered.map((a, i) => {
-          const displayPrice = a.price ?? a.lastKnownPrice;
-          return (
-          <motion.button
+        {filtered.map((a, i) => (
+          <AssetRow
             key={a.id}
-            type="button"
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.03 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => {
+            asset={a}
+            index={i}
+            catLabel={catLabel(a.category as typeof activeCategory)}
+            priceOnSignalStart={t.priceOnSignalStart}
+            onSelect={() => {
               setSelectedAsset(a);
               void api.requestFocus(a.symbol, 90_000).catch(() => {});
             }}
-            className="flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-gradient-to-r from-white/[0.05] to-transparent p-3 text-left transition-all hover:border-prime-gold/25 hover:from-prime-gold/[0.06]"
-          >
-            <div className="flex items-center gap-3">
-              <AssetIcon flags={a.flags} />
-              <div>
-                <p className="text-sm font-bold text-white">{a.symbol}</p>
-                <p className="text-[10px] text-slate-500">{catLabel(a.category as typeof activeCategory)}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                {displayPrice != null ? (
-                  <motion.p
-                    key={displayPrice}
-                    initial={{ opacity: 0.85, y: -1 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="font-display text-sm font-semibold tracking-wide text-prime-gold-light"
-                  >
-                    {displayPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
-                  </motion.p>
-                ) : (
-                  <p className="text-[10px] text-slate-600">{t.priceOnSignalStart}</p>
-                )}
-                <p className="text-xs font-bold text-neon-yellow">{a.payout}%</p>
-                {displayPrice != null && (
-                  <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
-                    {formatPercentChange(a.change)}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); toggleFavorite(a.symbol); }}
-                className="text-sm"
-              >
-                {a.favorite ? '⭐' : '☆'}
-              </button>
-              <span className="text-slate-600">›</span>
-            </div>
-          </motion.button>
-        );
-        })}
+            onToggleFavorite={() => toggleFavorite(a.symbol)}
+          />
+        ))}
       </div>
     </div>
   );

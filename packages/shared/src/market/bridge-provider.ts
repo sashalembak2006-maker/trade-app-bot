@@ -18,7 +18,7 @@ import {
   type MarketDataProvider,
 } from './provider.js';
 import { isPlausibleMarketPrice, isForexOtcSymbol } from './price-validation.js';
-import { SyntheticPriceEngine } from './synthetic-price.js';
+import { SyntheticPriceEngine, syntheticBasePrice } from './synthetic-price.js';
 import { resolveAssetFlags } from './asset-flags.js';
 import { normalizeAssetCategory, resolveAssetCategory } from './asset-category.js';
 
@@ -104,11 +104,19 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     };
   }
 
-  /** Real PO prices only — never synthetic ticks in API/WS display. */
+  /** Catalog anchor when PO sent payout only — hybrid list display. */
+  private catalogAnchor(symbol: string, payout: number): number {
+    return syntheticBasePrice(symbol);
+  }
+
+  /** Real PO / catalog anchor — hybrid micro-ticks when synthetic fallback on. */
   private displayPrice(a: StoredAsset): number | null {
     if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
     if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
       return a.lastKnownPrice;
+    }
+    if (a.payout >= 1 && a.payout <= 100 && syntheticFallbackEnabled) {
+      return this.catalogAnchor(a.symbol, a.payout);
     }
     return null;
   }
@@ -140,7 +148,9 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         ? prev.lastKnownPrice
         : prev?.price != null && isPlausibleMarketPrice(prev.price, symbol)
           ? prev.price
-          : null;
+          : prev?.payout != null
+            ? this.catalogAnchor(symbol, prev.payout)
+            : null;
     if (anchor == null) {
       throw new NoLivePriceError(`No anchored PO price for ${symbol}`);
     }
@@ -181,11 +191,17 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     ) {
       return a;
     }
-    if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, symbol)) {
-      if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, a.lastKnownPrice);
-    } else {
-      return a;
+    let anchor =
+      a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, symbol)
+        ? a.lastKnownPrice
+        : null;
+    if (anchor == null && syntheticFallbackEnabled && a.payout >= 1) {
+      anchor = this.catalogAnchor(symbol, a.payout);
+      a = { ...a, lastKnownPrice: anchor };
+      this.assets.set(symbol, a);
     }
+    if (anchor == null) return a;
+    if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, anchor);
     let price = this.synthetic.tick(symbol);
     if (price == null) price = a.lastKnownPrice ?? a.price;
     if (price == null) return a;
@@ -427,7 +443,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         change = roundChangePct(((validPrice - prevForChange) / prevForChange) * 100);
       }
 
-      const nextLastKnown =
+      let nextLastKnown =
         validPrice != null && !isSyntheticPulse
           ? validPrice
           : validLkp != null
@@ -435,6 +451,14 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
             : isLiveTick
               ? (validPrice ?? prevLkp)
               : prevLkp;
+      if (
+        nextLastKnown == null &&
+        typeof a.payout === 'number' &&
+        a.payout >= 1 &&
+        a.payout <= 100
+      ) {
+        nextLastKnown = this.catalogAnchor(a.symbol, a.payout);
+      }
       const lastKnownUpdated = nextLastKnown != null && nextLastKnown !== prevLkp;
 
       const stored: StoredAsset = {

@@ -98,7 +98,26 @@
     const isOtc = row[14] === true || /_otc/i.test(raw);
     const symbol = poSymbolToDisplay(raw);
     if (!symbol) return null;
-    return { symbol, payout, isOTC: isOtc, category: resolveBridgeCategory(symbol, isOtc), timestamp: Date.now() };
+    let catalogPrice = null;
+    for (let i = 0; i < row.length; i++) {
+      if (i === 5) continue;
+      const v = row[i];
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) continue;
+      if (v === payout || (v >= 50 && v <= 99 && Math.abs(v - Math.round(v)) < 0.001)) continue;
+      const p = sanitizeWsPrice(v, symbol, payout);
+      if (p != null) {
+        catalogPrice = p;
+        break;
+      }
+    }
+    return {
+      symbol,
+      payout,
+      isOTC: isOtc,
+      category: resolveBridgeCategory(symbol, isOtc),
+      timestamp: Date.now(),
+      ...(catalogPrice != null ? { lastKnownPrice: catalogPrice } : {}),
+    };
   }
 
   function parseUpdateAssets(data) {

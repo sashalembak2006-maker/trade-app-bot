@@ -22,6 +22,24 @@ export function poSymbolToDisplay(sym: string): string {
   return s.replace(/_/g, ' ') + (isOtc && !/otc/i.test(s) ? ' OTC' : '');
 }
 
+function rowCatalogPrice(row: unknown[], symbol: string, payout: number): number | null {
+  for (let i = 0; i < row.length; i++) {
+    if (i === 5) continue;
+    const v = row[i];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) continue;
+    if (v === payout || (v >= 50 && v <= 99 && Math.abs(v - Math.round(v)) < 0.001)) continue;
+    const frac = v.toFixed(10).replace(/0+$/, '').split('.')[1] || '';
+    if (frac.length < 2) continue;
+    const core = symbol.replace(/\s+OTC$/i, '').toUpperCase();
+    if (/JPY/.test(core) && (v < 40 || v > 500)) continue;
+    if (!/JPY/.test(core) && v > 25 && v < 50_000) {
+      if (v >= 50 && v <= 99) continue;
+    }
+    return v;
+  }
+  return null;
+}
+
 /** Parse one Pocket Option `updateAssets` row (array format). */
 export function parsePocketAssetRow(row: unknown): BridgeAssetInput | null {
   if (!Array.isArray(row) || row.length < 6) return null;
@@ -31,7 +49,15 @@ export function parsePocketAssetRow(row: unknown): BridgeAssetInput | null {
   const isOTC = row[14] === true || /_otc/i.test(raw);
   const symbol = poSymbolToDisplay(raw);
   if (!symbol) return null;
-  return { symbol, payout, isOTC, poAsset: raw, timestamp: Date.now() };
+  const catalogPrice = rowCatalogPrice(row, symbol, payout);
+  return {
+    symbol,
+    payout,
+    isOTC,
+    poAsset: raw,
+    ...(catalogPrice != null ? { lastKnownPrice: catalogPrice } : {}),
+    timestamp: Date.now(),
+  };
 }
 
 export function parseUpdateAssetsPayload(data: unknown): BridgeAssetInput[] {

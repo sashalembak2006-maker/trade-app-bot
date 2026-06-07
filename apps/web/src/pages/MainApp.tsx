@@ -186,22 +186,22 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
           </div>
         )}
         <main className="space-y-3 px-4 py-4 pb-36">
-          <ExpandableSection id="assets" icon="📈" title={t.assets} accent="border-prime-gold/20">
+          <ExpandableSection id="assets" title={t.assets} accent="border-prime-gold/25">
             <ActivesSection />
           </ExpandableSection>
-          <ExpandableSection id="learning" icon="🎓" title={t.learning} accent="border-prime-gold/15">
+          <ExpandableSection id="learning" title={t.learning} accent="border-prime-gold/18">
             <LearningSection />
           </ExpandableSection>
-          <ExpandableSection id="calculator" icon="🧮" title={t.calculator} accent="border-prime-gold/15">
+          <ExpandableSection id="calculator" title={t.calculator} accent="border-prime-gold/15">
             <CalculatorSection />
           </ExpandableSection>
-          <ExpandableSection id="news" icon="📰" title={t.news} accent="border-prime-gold/15">
+          <ExpandableSection id="news" title={t.news} accent="border-prime-gold/15">
             <NewsSection />
           </ExpandableSection>
-          <ExpandableSection id="indicators" icon="📉" title={t.indicators} accent="border-prime-gold/15">
+          <ExpandableSection id="indicators" title={t.indicators} accent="border-prime-gold/18">
             <IndicatorsSection />
           </ExpandableSection>
-          <ExpandableSection id="analysis" icon="📊" title={t.analysis} accent="border-prime-gold/25">
+          <ExpandableSection id="analysis" title={t.analysis} accent="border-prime-gold/30">
             <MarketAnalysisSection />
           </ExpandableSection>
         </main>

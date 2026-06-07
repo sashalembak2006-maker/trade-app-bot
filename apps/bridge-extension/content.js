@@ -513,11 +513,17 @@
       for (const a of ev.data.assets) {
         if (!a?.symbol || typeof a.payout !== 'number' || a.payout < 1 || a.payout > 100) continue;
         const prev = wsAssets.get(a.symbol);
+        const lkp =
+          typeof a.lastKnownPrice === 'number'
+            ? sanitizeWsPrice(a.lastKnownPrice, a.symbol, a.payout)
+            : null;
+        if (lkp != null) rememberPrice(a.symbol, lkp, a.payout);
         const nextPrice = typeof a.price === 'number' ? a.price : prev?.price;
         wsAssets.set(a.symbol, withCategory({
           symbol: a.symbol,
           payout: a.payout,
           price: nextPrice,
+          lastKnownPrice: lkp ?? prev?.lastKnownPrice,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
@@ -1077,6 +1083,14 @@
     return out;
   }
 
+  function resolveCatalogAnchor(symbol, payout) {
+    const remembered = lastKnownPrices.get(symbol);
+    if (remembered != null && isValidPrice(symbol, remembered, payout)) return remembered;
+    const scraped = catalogPulsePrices.get(symbol)?.price;
+    if (scraped != null && isValidPrice(symbol, scraped, payout)) return scraped;
+    return seededBasePrice(symbol);
+  }
+
   function finalizeAssets(assets, activeSymbol) {
     const WS_PRICE_TTL_MS = 15_000;
     return assets
@@ -1089,34 +1103,34 @@
         const wsPrice =
           wsEntry?.price != null ? sanitizeWsPrice(wsEntry.price, row.symbol, row.payout) : null;
         let price = null;
+        const isFocused = row.symbol === activeSymbol;
 
-        if (row.symbol === activeSymbol || (wsPrice != null && wsFresh)) {
+        if (isFocused || (wsPrice != null && wsFresh)) {
           const raw =
             row.price != null ? sanitizeWsPrice(row.price, row.symbol, row.payout) : wsPrice;
           if (raw != null) price = raw;
-        } else {
-          if (row.price != null) {
-            const scraped = sanitizeWsPrice(row.price, row.symbol, row.payout);
-            if (scraped != null) price = scraped;
-          }
-          if (price == null && wsPrice != null && wsEntry?.live === true) price = wsPrice;
+        } else if (row.price != null) {
+          const scraped = sanitizeWsPrice(row.price, row.symbol, row.payout);
+          if (scraped != null) price = scraped;
+        } else if (wsPrice != null && wsEntry?.live === true) {
+          price = wsPrice;
         }
 
+        const anchor = resolveCatalogAnchor(row.symbol, row.payout);
         if (price != null) {
           rememberPrice(row.symbol, price, row.payout);
           row.price = price;
-          if (row.live === true || (wsEntry?.live === true && wsFresh)) {
+          if (row.live === true || (wsEntry?.live === true && wsFresh) || isFocused) {
             row.live = true;
           } else {
             delete row.live;
           }
+          row.lastKnownPrice = lastKnownPrices.get(row.symbol) ?? price;
         } else {
           delete row.price;
           delete row.live;
-        }
-        const remembered = lastKnownPrices.get(row.symbol);
-        if (remembered != null && isValidPrice(row.symbol, remembered, row.payout)) {
-          row.lastKnownPrice = remembered;
+          row.lastKnownPrice = anchor;
+          rememberPrice(row.symbol, anchor, row.payout);
         }
         return row;
       });
@@ -1131,12 +1145,14 @@
 
     for (const a of wsAssets.values()) {
       if (!a?.symbol || typeof a.payout !== 'number') continue;
+      const anchor = resolveCatalogAnchor(a.symbol, a.payout);
       const entry = withCategory({
         symbol: a.symbol,
         payout: a.payout,
         isOTC: a.isOTC ?? /otc/i.test(a.symbol),
         category: a.category,
         timestamp: a.timestamp ?? Date.now(),
+        lastKnownPrice: a.lastKnownPrice ?? anchor,
       });
       const p = sanitizeWsPrice(a.price, a.symbol, a.payout);
       if (p != null) {
@@ -1275,6 +1291,11 @@
         a.price != null ? sanitizePrice(a.price, a.symbol, a.payout ?? prev?.payout, null) : null;
       if (scrapedPrice != null) rememberPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout);
       const remembered = lastKnownPrices.get(a.symbol);
+      const anchor =
+        remembered ??
+        (scrapedPrice != null && isValidPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout)
+          ? scrapedPrice
+          : seededBasePrice(a.symbol));
       wsAssets.set(
         a.symbol,
         withCategory({
@@ -1282,11 +1303,23 @@
           ...a,
           payout: a.payout ?? prev?.payout,
           price: scrapedPrice ?? prev?.price,
-          lastKnownPrice: remembered ?? prev?.lastKnownPrice ?? scrapedPrice ?? prev?.price,
+          lastKnownPrice: anchor,
           live: a.live === true ? true : prev?.live === true,
           timestamp: Date.now(),
         }),
       );
+    }
+    for (const [symbol, entry] of wsAssets) {
+      if (!symbol || typeof entry?.payout !== 'number') continue;
+      if (entry.lastKnownPrice != null && isValidPrice(symbol, entry.lastKnownPrice, entry.payout)) {
+        continue;
+      }
+      const anchor = resolveCatalogAnchor(symbol, entry.payout);
+      lastKnownPrices.set(symbol, anchor);
+      wsAssets.set(symbol, {
+        ...entry,
+        lastKnownPrice: anchor,
+      });
     }
   }
 
