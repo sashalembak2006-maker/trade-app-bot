@@ -17,8 +17,10 @@ $CLI whoami
 echo "→ Link project/service (prime-trade)"
 $CLI link -p rare-rebirth -s prime-trade 2>/dev/null || $CLI link || true
 
-echo "→ Set BRIDGE_SECRETS on prime-trade"
+echo "→ Set production vars on prime-trade"
 $CLI variables set "BRIDGE_SECRETS=${BRIDGE_SECRETS}" --service prime-trade
+$CLI variables set "MARKET_DATA_MODE=platform" --service prime-trade
+$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=false" --service prime-trade
 
 echo "→ Deploy prime-trade"
 $CLI up --detach --service prime-trade

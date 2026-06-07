@@ -12,8 +12,8 @@ let lastPostedAt = 0;
 let fetchFailStreak = 0;
 let lastPostSuccessAt = 0;
 
-/** Max 1 POST/s — keeps Railway bridge.connected without hammering. */
-const POST_INTERVAL_MS = 1000;
+/** Target ~250ms POST cadence — live prices without stale bridge heartbeat. */
+const POST_INTERVAL_MS = 250;
 const OFFSCREEN_URL = 'offscreen.html';
 const pendingOffscreenFetches = new Map();
 let offscreenPort = null;
