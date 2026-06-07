@@ -1,0 +1,10 @@
+node_modules
+.git
+apps/**/node_modules
+trade-app-bot
+*.md
+.env
+.env.*
+!.env.production.example
+terminals
+.cursor

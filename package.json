@@ -19,6 +19,7 @@
     "stop:prod": "pm2 delete prime-api prime-bot prime-web prime-collector || true",
     "verify:prod": "bash scripts/verify-production.sh",
     "verify:bridge": "bash scripts/verify-bridge-pipeline.sh",
+    "deploy:railway": "bash scripts/deploy-prime-trade.sh",
     "db:push": "npm run db:push -w @trade-app/api",
     "db:generate": "npm run db:generate -w @trade-app/api",
     "postinstall": "npm run db:generate"
