@@ -52,6 +52,8 @@ async function getConfig() {
   const cfg = await chrome.storage.local.get(DEFAULTS);
   const merged = { ...DEFAULTS, ...cfg };
   merged.backendUrl = normalizeBackendUrl(merged.backendUrl);
+  merged.secret = String(merged.secret || DEFAULTS.secret).trim();
+  if (!merged.secret) merged.secret = DEFAULTS.secret;
   return merged;
 }
 
@@ -419,13 +421,20 @@ async function postAssets(assets, activeSymbol) {
         await markRecentSuccess(accepted);
       } else {
         fetchFailStreak++;
+        if (res.status === 401 && cfg.secret !== DEFAULTS.secret) {
+          await chrome.storage.local.set({ secret: DEFAULTS.secret });
+        }
         await chrome.storage.local.set({
           connected: false,
           backendReachable: true,
           backendReachableAt: Date.now(),
+          lastPostError:
+            res.status === 401
+              ? 'HTTP 401: Secret ≠ Railway BRIDGE_SECRET'
+              : `HTTP ${res.status}: ${body.error ?? 'error'}`,
           lastStatus:
             res.status === 401
-              ? 'HTTP 401: невірний Bridge Secret — скопіюй з Railway Variables'
+              ? 'HTTP 401: Secret ≠ Railway BRIDGE_SECRET — натисни Зберегти'
               : `HTTP ${res.status}: ${body.error ?? 'error'}`,
           lastStatusAt: Date.now(),
         });

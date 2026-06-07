@@ -179,6 +179,10 @@ const BridgeHttp = (() => {
         parsed = {};
       }
 
+      if (!res.ok && res.status === 401 && cfg.secret !== DEFAULTS.secret) {
+        await chrome.storage.local.set({ secret: DEFAULTS.secret });
+      }
+
       return {
         ok: res.ok,
         status: res.status,
@@ -186,7 +190,7 @@ const BridgeHttp = (() => {
         error: res.ok
           ? undefined
           : res.status === 401
-            ? 'HTTP 401: Secret ≠ Railway BRIDGE_SECRET'
+            ? 'HTTP 401: Secret ≠ Railway BRIDGE_SECRET — Зберегти + Reload'
             : `HTTP ${res.status}`,
       };
     } finally {

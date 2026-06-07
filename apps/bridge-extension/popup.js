@@ -120,9 +120,17 @@ $('copyBinary').addEventListener('click', async () => {
 
 $('save').addEventListener('click', async () => {
   const url = baseUrl();
+  const sec = secret();
   $('backendUrl').value = url;
-  await chrome.storage.local.set({ backendUrl: url, secret: secret() });
+  $('secret').value = sec;
+  await chrome.storage.local.set({
+    backendUrl: url,
+    secret: sec,
+    lastPostError: '',
+    lastPostSuccessAt: 0,
+  });
   $('status').textContent = 'Збережено ✓';
+  $('hint').textContent = 'Натисни «Перевірити backend»';
   setTimeout(renderLive, 300);
 });
 
