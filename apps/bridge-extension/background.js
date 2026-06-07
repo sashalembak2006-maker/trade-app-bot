@@ -5,6 +5,9 @@ const DEFAULTS = {
 };
 
 const frameData = new Map();
+/** Keeps ALL assets seen across PO tab rotations (PO WS sends one tab at a time). */
+const catalogAssets = new Map();
+const CATALOG_TTL_MS = 20 * 60 * 1000;
 let flushTimer = null;
 let postInFlight = false;
 let pendingPost = null;
@@ -168,6 +171,28 @@ function pickDisplayAsset(assets) {
   return assets.find((a) => isReasonablePrice(a.price, a.symbol)) || assets[0];
 }
 
+function ingestCatalogAssets(assets) {
+  const now = Date.now();
+  for (const a of assets || []) {
+    if (!a?.symbol || typeof a.payout !== 'number') continue;
+    const prev = catalogAssets.get(a.symbol);
+    const next = {
+      symbol: a.symbol,
+      payout: a.payout,
+      isOTC: a.isOTC ?? prev?.isOTC,
+      category: a.category ?? prev?.category,
+      timestamp: a.timestamp ?? prev?.timestamp ?? now,
+      lastSeen: now,
+    };
+    if (isReasonablePrice(a.price, a.symbol)) next.price = a.price;
+    else if (prev?.price != null) next.price = prev.price;
+    catalogAssets.set(a.symbol, next);
+  }
+  for (const [sym, a] of catalogAssets) {
+    if (now - (a.lastSeen ?? 0) > CATALOG_TTL_MS) catalogAssets.delete(sym);
+  }
+}
+
 function mergeFrameAssets() {
   const now = Date.now();
   const entries = [];
@@ -219,8 +244,24 @@ function mergeFrameAssets() {
     }
   }
 
+  ingestCatalogAssets(Array.from(merged.values()));
+
+  const catalog = Array.from(catalogAssets.values()).map((a) => {
+    const live = merged.get(a.symbol);
+    if (!live) return a;
+    return {
+      ...a,
+      payout: live.payout ?? a.payout,
+      price: live.price ?? a.price,
+      category: live.category ?? a.category,
+      isOTC: live.isOTC ?? a.isOTC,
+      timestamp: live.timestamp ?? a.timestamp,
+      lastSeen: Date.now(),
+    };
+  });
+
   return {
-    assets: Array.from(merged.values()),
+    assets: catalog.length ? catalog : Array.from(merged.values()),
     frameCount,
     host: Array.from(hosts).join(', ') || '',
     activeSymbol,

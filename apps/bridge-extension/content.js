@@ -1124,6 +1124,22 @@
     }
   }
 
+  function syncDomAndWsCatalog() {
+    for (const a of scrapeList()) {
+      const prev = wsAssets.get(a.symbol);
+      wsAssets.set(
+        a.symbol,
+        withCategory({
+          ...prev,
+          ...a,
+          payout: a.payout ?? prev?.payout,
+          category: a.category ?? prev?.category,
+          timestamp: Date.now(),
+        }),
+      );
+    }
+  }
+
   function tick() {
     if (contextDead && canSendToExtension()) {
       contextDead = false;
@@ -1133,6 +1149,7 @@
     if (domSym && domSym !== wsActiveSymbol) {
       wsActiveSymbol = domSym;
     }
+    syncDomAndWsCatalog();
     const { assets, activeSymbol, activePayload } = buildBatch();
     const frame = window.top === window.self ? 'top' : 'iframe';
     const source = wsAssets.size > 0 ? 'ws+dom' : 'dom';
@@ -1223,7 +1240,7 @@
 
   /** PO sends updateAssets only for the open catalog tab — rotate tabs to collect forex/crypto/stocks. */
   const CATEGORY_TAB_RULES = [
-    { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc|\botc\b/i, label: 'forex_otc' },
+    { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc|^otc$/i, label: 'forex_otc' },
     { re: /^currencies$|^валюти$|^валюты$|^forex$|^currency$/i, label: 'forex' },
     { re: /crypto|крипт|криптовалют|bitcoin|біткоїн/i, label: 'crypto' },
     { re: /stocks|акці|акци|акцій|company/i, label: 'stocks' },
@@ -1296,6 +1313,10 @@
       tab.el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       if (typeof tab.el.click === 'function') tab.el.click();
       console.log('[PRIME Bridge] category tab →', tab.text, `(${tab.label})`, `[${tabs.length} tabs]`);
+      setTimeout(() => {
+        syncDomAndWsCatalog();
+        tick();
+      }, 600);
     } catch {
       /* ignore */
     }
