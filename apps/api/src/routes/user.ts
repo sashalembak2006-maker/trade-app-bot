@@ -233,19 +233,14 @@ router.get('/assets/:symbol/price', async (req, res) => {
   try {
     let price: number;
     if (provider instanceof BridgeMarketDataProvider) {
-      const live = provider.getLivePrice(symbol);
-      if (live != null) {
-        price = live;
+      const quote = provider.getBridgeQuote(symbol, 60_000);
+      if (quote != null) {
+        price = quote;
       } else {
-        const quote = provider.getBridgeQuote(symbol, 8_000);
-        if (quote != null) {
-          price = quote;
-        } else {
-          const waitMs = Math.min(Number(req.query.waitMs) || 1500, 5000);
-          price = await provider.waitForLivePrice(symbol, waitMs, {
-            allowSynthetic: isBridgeSyntheticFallbackEnabled(),
-          });
-        }
+        const waitMs = Math.min(Number(req.query.waitMs) || 2500, 8000);
+        price = await provider.waitForLivePrice(symbol, waitMs, {
+          allowSynthetic: isBridgeSyntheticFallbackEnabled(),
+        });
       }
     } else {
       price = await provider.getAssetPrice(symbol);
@@ -306,7 +301,7 @@ router.post('/signals/generate', async (req, res) => {
     return res.status(503).json({ error: 'DATA SOURCE NOT CONFIGURED', code: 'DATA_SOURCE_NOT_CONFIGURED' });
   }
 
-  // Fast-fail when bridge has no data for this asset (no long wait).
+  // Require bridge catalog entry; allow signal when we have any anchored quote.
   if (provider instanceof BridgeMarketDataProvider) {
     const rows = provider.rows();
     const row = rows.find((r) => r.symbol === symbol);
@@ -316,7 +311,8 @@ router.post('/signals/generate', async (req, res) => {
         code: 'NO_ASSET_DATA',
       });
     }
-    if (row.stale && row.price == null) {
+    const hasQuote = provider.getBridgeQuote(symbol, 120_000) != null;
+    if (row.stale && row.price == null && !hasQuote) {
       return res.status(422).json({
         error: 'No live price for asset — open this pair on Pocket Option trading chart',
         code: 'NO_PRICE',
@@ -325,8 +321,8 @@ router.post('/signals/generate', async (req, res) => {
   }
 
   const waitMs = Math.min(
-    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 10_000, 3_000),
-    12_000,
+    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 12_000, 3_000),
+    15_000,
   );
   if (getMarketMode() === 'platform') {
     requestFocus(symbol, waitMs + 45_000);
@@ -338,7 +334,7 @@ router.post('/signals/generate', async (req, res) => {
   try {
     payout = await provider.getPayout(symbol);
     if (provider instanceof BridgeMarketDataProvider) {
-      const quote = provider.getBridgeQuote(symbol, 12_000);
+      const quote = provider.getBridgeQuote(symbol, 60_000);
       if (quote != null) {
         price = quote;
       } else {
@@ -348,7 +344,7 @@ router.post('/signals/generate', async (req, res) => {
             allowSynthetic: isBridgeSyntheticFallbackEnabled(),
           });
         } catch (waitErr) {
-          const fallback = provider.getBridgeQuote(symbol, 20_000);
+          const fallback = provider.getBridgeQuote(symbol, 120_000);
           if (fallback != null) {
             price = fallback;
           } else if (isBridgeSyntheticFallbackEnabled()) {

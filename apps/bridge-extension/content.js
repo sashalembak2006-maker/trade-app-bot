@@ -1187,19 +1187,6 @@
 
     let assets = Array.from(bySymbol.values());
 
-    for (const [symbol, pulse] of catalogPulsePrices) {
-      if (!isForexOtcSymbol(symbol)) continue;
-      const idx = assets.findIndex((a) => a.symbol === symbol);
-      if (idx < 0) continue;
-      if (assets[idx].live === true) continue;
-      assets[idx] = {
-        ...assets[idx],
-        price: pulse.price,
-        synthetic: true,
-        timestamp: pulse.timestamp ?? Date.now(),
-      };
-    }
-
     if (assets.length === 0) {
       assets = scrapeTradingFallback();
     }

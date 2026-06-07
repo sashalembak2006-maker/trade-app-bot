@@ -16,7 +16,7 @@ function forexCrossBand(symbol: string): { min: number; max: number } | null {
   if (base === 'USD' && quote === 'CAD') return { min: 1.1, max: 1.65 };
   if (base === 'USD' && quote === 'CHF') return { min: 0.72, max: 1.08 };
   if (base === 'EUR' && quote === 'GBP') return { min: 0.78, max: 0.98 };
-  if (base === 'AUD' && quote === 'CAD') return { min: 0.82, max: 1.05 };
+    if (base === 'AUD' && quote === 'CAD') return { min: 0.82, max: 1.08 };
   if (base === 'AUD' && quote === 'NZD') return { min: 1.0, max: 1.25 };
   if (base === 'EUR' && quote === 'JPY') return { min: 120, max: 200 };
   if (base === 'GBP' && quote === 'JPY') return { min: 140, max: 240 };
