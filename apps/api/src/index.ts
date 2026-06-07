@@ -19,7 +19,7 @@ const syntheticFallback =
   (process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
 setBridgeSyntheticFallback(syntheticFallback);
 
-const PORT = Number(process.env.API_PORT ?? 3001);
+const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);
 const app = express();
 const server = createServer(app);
 

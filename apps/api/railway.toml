@@ -1,0 +1,14 @@
+# Railway: сервіс @trade-app/api
+# Dashboard → Service → Settings → Config file path: apps/api/railway.toml
+# Додатково: Variable RAILWAY_DOCKERFILE_TARGET = api
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["apps/api/**", "packages/shared/**", "Dockerfile"]
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
