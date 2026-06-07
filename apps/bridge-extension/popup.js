@@ -32,7 +32,7 @@ async function renderLive() {
 
   const heartbeatOk = isRecent(data.lastHeartbeatAt, 12000);
   const postOk = isRecent(data.lastPostSuccessAt, 12000);
-  const scrapeOk = (data.lastScrapeCount ?? 0) >= 3;
+  const scrapeOk = (data.lastScrapeCount ?? 0) >= 1;
 
   const box = $('statusBox');
   let statusText = 'Status: Not connected';

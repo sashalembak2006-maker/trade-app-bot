@@ -1223,12 +1223,12 @@
 
   /** PO sends updateAssets only for the open catalog tab — rotate tabs to collect forex/crypto/stocks. */
   const CATEGORY_TAB_RULES = [
-    { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc/i, label: 'forex_otc' },
-    { re: /^currencies$|^валюти$|^валюты$|^forex$/i, label: 'forex' },
-    { re: /crypto|крипт|криптовалют/i, label: 'crypto' },
-    { re: /stocks|акці|акци/i, label: 'stocks' },
-    { re: /commodit|товар/i, label: 'commodities' },
-    { re: /indic|індекс|индекс/i, label: 'indices' },
+    { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc|\botc\b/i, label: 'forex_otc' },
+    { re: /^currencies$|^валюти$|^валюты$|^forex$|^currency$/i, label: 'forex' },
+    { re: /crypto|крипт|криптовалют|bitcoin|біткоїн/i, label: 'crypto' },
+    { re: /stocks|акці|акци|акцій|company/i, label: 'stocks' },
+    { re: /commodit|товар|gold|срібл|нафта|oil/i, label: 'commodities' },
+    { re: /indic|індекс|индекс|index|s&p|nasdaq|dji/i, label: 'indices' },
   ];
 
   function getAssetPanelRoots() {
@@ -1253,11 +1253,20 @@
     const found = [];
     const seen = new Set();
     const seenLabels = new Set();
-    for (const root of getAssetPanelRoots()) {
-      root.querySelectorAll('button, a, [role="tab"], li').forEach((el) => {
+    const roots = getAssetPanelRoots();
+    // PO modal tabs — also scan switcher/tab bars outside assets-block.
+    document
+      .querySelectorAll('[class*="switcher"], [class*="tabs"], [class*="categories"]')
+      .forEach((el) => roots.push(el));
+
+    for (const root of roots) {
+      root.querySelectorAll('button, a, [role="tab"], li, span, div').forEach((el) => {
         if (seen.has(el)) return;
-        const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!text || text.length > 32 || text.length < 3) return;
+        const text = (el.textContent || el.getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!text || text.length > 40 || text.length < 2) return;
+        if (/^\d+$/.test(text)) return;
         for (const rule of CATEGORY_TAB_RULES) {
           if (rule.re.test(text) && !seenLabels.has(rule.label)) {
             seen.add(el);
@@ -1271,17 +1280,22 @@
     return found;
   }
 
+  const CATEGORY_ROTATE_MS = 2800;
   let categoryTabIndex = 0;
+
   function rotateCategoryTab() {
     ensureAssetCatalogOpen();
     const tabs = findCategoryTabs();
-    if (!tabs.length) return;
+    if (!tabs.length) {
+      console.warn('[PRIME Bridge] category tabs not found — клікни на пару EUR/USD щоб відкрити список активів');
+      return;
+    }
     const tab = tabs[categoryTabIndex % tabs.length];
     categoryTabIndex = (categoryTabIndex + 1) % tabs.length;
     try {
       tab.el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
       if (typeof tab.el.click === 'function') tab.el.click();
-      console.log('[PRIME Bridge] category tab →', tab.text, `(${tab.label})`);
+      console.log('[PRIME Bridge] category tab →', tab.text, `(${tab.label})`, `[${tabs.length} tabs]`);
     } catch {
       /* ignore */
     }
@@ -1289,13 +1303,19 @@
 
   function startCategoryRotation() {
     setTimeout(() => {
+      navigateToDemoIfNeeded();
       const p = (location.pathname || '').toLowerCase();
       if (p.match(/\/cabinet\/?$/) || (p.includes('/cabinet') && !p.includes('quick-high-low'))) {
         location.href = `${location.origin}/en/cabinet/demo-quick-high-low/`;
+        return;
       }
       ensureAssetCatalogOpen();
+      // PO WebSocket updateAssets = only the open catalog tab — rotate to collect all categories.
+      setTimeout(() => {
+        rotateCategoryTab();
+        setInterval(rotateCategoryTab, CATEGORY_ROTATE_MS);
+      }, 1500);
     }, 2000);
-    // Wake service worker + force POST every 3s while PO tab is open.
     setInterval(() => {
       sendMessageSafe({ type: 'bridge-keepalive' });
     }, 3000);
