@@ -16,11 +16,7 @@ import { startBridgeMonitor } from './services/bridge-status.js';
 
 const syntheticFallback =
   process.env.PLATFORM_SYNTHETIC_FALLBACK === 'true' ||
-  (process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false' &&
-    (process.env.NODE_ENV !== 'production' ||
-      process.env.MARKET_DATA_MODE === 'platform' ||
-      process.env.MARKET_DATA_MODE === 'bridge' ||
-      Boolean(process.env.BRIDGE_SECRET?.trim())));
+  (process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
 setBridgeSyntheticFallback(syntheticFallback);
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);

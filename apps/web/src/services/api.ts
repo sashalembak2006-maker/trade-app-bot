@@ -111,6 +111,9 @@ export interface MarketDataStatus {
   lastUpdate?: number | null;
   assetCount?: number;
   activeMode?: 'mock' | 'platform' | 'unconfigured';
+  bridgeConnected?: boolean;
+  bridgeStale?: boolean;
+  bridgeLastUpdate?: number | null;
 }
 
 export interface AssetsResponse {

@@ -39,8 +39,11 @@ function resolveInitialMode(): MarketMode {
   const raw = process.env.MARKET_DATA_MODE;
   if (raw === 'platform' || raw === 'bridge') return 'platform';
   if (raw === 'mock') return 'mock';
-  // Production with bridge secret → platform bridge (extension/collector ingest).
-  if (isProd && process.env.BRIDGE_SECRET?.trim()) return 'platform';
+  // Production with bridge secret(s) → platform bridge (extension/collector ingest).
+  const hasBridgeSecret =
+    Boolean(process.env.BRIDGE_SECRET?.trim()) ||
+    Boolean(process.env.BRIDGE_SECRETS?.split(',').some((s) => s.trim()));
+  if (isProd && hasBridgeSecret) return 'platform';
   return isProd ? 'unconfigured' : 'mock';
 }
 

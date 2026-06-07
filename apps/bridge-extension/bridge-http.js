@@ -1,7 +1,7 @@
 /* eslint-disable */
 /** Shared Railway POST client — single lock, compact payload, debounced errors. */
 const BridgeHttp = (() => {
-  const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: 'dev-secret' };
+  const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: '9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5' };
   const TIMEOUT_MS = 8000;
   const MIN_POST_GAP_MS = 180;
   const LOCK_KEY = 'bridgePostLock';

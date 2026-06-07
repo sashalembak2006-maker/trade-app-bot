@@ -1,5 +1,5 @@
 /* eslint-disable */
-const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: 'dev-secret' };
+const DEFAULTS = { backendUrl: 'https://prime-trade-production.up.railway.app', secret: '9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5' };
 
 const $ = (id) => document.getElementById(id);
 

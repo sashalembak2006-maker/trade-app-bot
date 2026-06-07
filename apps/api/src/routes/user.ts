@@ -323,7 +323,7 @@ router.post('/signals/generate', async (req, res) => {
         price = await provider.getAssetPrice(symbol);
       } else {
         log.info('Waiting for live price', { symbol, waitMs });
-        price = await provider.waitForLivePrice(symbol, waitMs);
+        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
       }
     } else {
       price = await provider.getAssetPrice(symbol);

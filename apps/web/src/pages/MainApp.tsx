@@ -121,8 +121,8 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
 
   const bridgeStale =
     marketStatus?.mode === 'live' &&
-    marketStatus?.stale === true &&
-    !marketStatus?.configured;
+    marketStatus?.bridgeStale === true &&
+    marketStatus?.bridgeConnected !== true;
 
   return (
     <div className="relative min-h-full bg-prime-bg">

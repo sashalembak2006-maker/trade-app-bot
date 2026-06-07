@@ -306,10 +306,8 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     }
     if (count > 0) {
       this.lastUpdate = now;
-      if (syntheticFallbackEnabled) {
-        this.ensureSyntheticTimer();
-        this.pulseSubscribers();
-      }
+      if (syntheticFallbackEnabled) this.ensureSyntheticTimer();
+      this.pulseSubscribers();
     }
     return count;
   }
