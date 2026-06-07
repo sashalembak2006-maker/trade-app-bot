@@ -815,7 +815,6 @@
     const price = findPriceInRow(row, symbol, payout);
     if (price != null) {
       payload.price = price;
-      payload.live = true;
       rememberPrice(symbol, price, payout);
     }
     return payload;
@@ -1115,6 +1114,10 @@
           delete row.price;
           delete row.live;
         }
+        const remembered = lastKnownPrices.get(row.symbol);
+        if (remembered != null && isValidPrice(row.symbol, remembered, row.payout)) {
+          row.lastKnownPrice = remembered;
+        }
         return row;
       });
   }
@@ -1271,6 +1274,7 @@
       const scrapedPrice =
         a.price != null ? sanitizePrice(a.price, a.symbol, a.payout ?? prev?.payout, null) : null;
       if (scrapedPrice != null) rememberPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout);
+      const remembered = lastKnownPrices.get(a.symbol);
       wsAssets.set(
         a.symbol,
         withCategory({
@@ -1278,6 +1282,7 @@
           ...a,
           payout: a.payout ?? prev?.payout,
           price: scrapedPrice ?? prev?.price,
+          lastKnownPrice: remembered ?? prev?.lastKnownPrice ?? scrapedPrice ?? prev?.price,
           live: a.live === true ? true : prev?.live === true,
           timestamp: Date.now(),
         }),

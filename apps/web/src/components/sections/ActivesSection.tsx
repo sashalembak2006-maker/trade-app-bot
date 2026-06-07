@@ -52,7 +52,9 @@ export function ActivesSection() {
             <p className="mt-2 text-[11px] text-slate-600">{t.bridgeNotConnectedHint}</p>
           </div>
         )}
-        {filtered.map((a, i) => (
+        {filtered.map((a, i) => {
+          const displayPrice = a.price ?? a.lastKnownPrice;
+          return (
           <motion.button
             key={a.id}
             type="button"
@@ -75,20 +77,20 @@ export function ActivesSection() {
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
-                {a.price != null ? (
-                  <p className="text-sm font-semibold text-white">
-                    {a.price.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
-                  </p>
-                ) : a.lastKnownPrice != null ? (
-                  <p className="text-sm font-semibold text-slate-500">
-                    {a.lastKnownPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
-                    <span className="ml-1 text-[9px] text-slate-600">({t.lastKnownPrice})</span>
-                  </p>
+                {displayPrice != null ? (
+                  <motion.p
+                    key={displayPrice}
+                    initial={{ opacity: 0.85, y: -1 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="font-display text-sm font-semibold tracking-wide text-prime-gold-light"
+                  >
+                    {displayPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
+                  </motion.p>
                 ) : (
                   <p className="text-[10px] text-slate-600">{t.priceOnSignalStart}</p>
                 )}
                 <p className="text-xs font-bold text-neon-yellow">{a.payout}%</p>
-                {(a.price != null || a.lastKnownPrice != null) && (
+                {displayPrice != null && (
                   <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
                     {formatPercentChange(a.change)}
                   </p>
@@ -104,7 +106,8 @@ export function ActivesSection() {
               <span className="text-slate-600">›</span>
             </div>
           </motion.button>
-        ))}
+        );
+        })}
       </div>
     </div>
   );

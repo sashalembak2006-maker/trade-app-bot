@@ -26,6 +26,13 @@ const BridgeHttp = (() => {
         if (typeof a.price === 'number' && Number.isFinite(a.price) && a.price > 0) {
           row.price = a.price;
         }
+        if (
+          typeof a.lastKnownPrice === 'number' &&
+          Number.isFinite(a.lastKnownPrice) &&
+          a.lastKnownPrice > 0
+        ) {
+          row.lastKnownPrice = a.lastKnownPrice;
+        }
         if (a.live === true) row.live = true;
         if (a.synthetic === true) row.synthetic = true;
         if (typeof a.timestamp === 'number' && Number.isFinite(a.timestamp)) {

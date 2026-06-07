@@ -45,6 +45,122 @@ function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
 }
 
+function DirectionHero({ isCall, title, subtitle }: { isCall: boolean; title: string; subtitle: string }) {
+  return (
+    <div
+      className={`relative mb-4 overflow-hidden rounded-2xl border p-6 text-center ${
+        isCall
+          ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-950/55 via-black/70 to-emerald-900/15'
+          : 'border-rose-500/30 bg-gradient-to-br from-rose-950/55 via-black/70 to-rose-900/15'
+      }`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(212,175,55,0.1),transparent_65%)]" />
+      <motion.div
+        className={`relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border ${
+          isCall ? 'border-emerald-400/45 bg-emerald-500/10' : 'border-rose-400/45 bg-rose-500/10'
+        }`}
+        animate={{ boxShadow: isCall
+          ? ['0 0 0 rgba(34,197,94,0)', '0 0 28px rgba(34,197,94,0.35)', '0 0 0 rgba(34,197,94,0)']
+          : ['0 0 0 rgba(244,63,94,0)', '0 0 28px rgba(244,63,94,0.35)', '0 0 0 rgba(244,63,94,0)'] }}
+        transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className={`h-8 w-8 ${isCall ? 'text-emerald-300' : 'text-rose-300'}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+        >
+          {isCall ? (
+            <path d="M12 19V5M6 11l6-6 6 6" strokeLinecap="round" strokeLinejoin="round" />
+          ) : (
+            <path d="M12 5v14M6 13l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          )}
+        </svg>
+      </motion.div>
+      <p className="font-display text-[10px] font-semibold uppercase tracking-[0.4em] text-prime-gold/65">
+        PRIME TRADE
+      </p>
+      <h3 className={`font-display mt-2 text-2xl font-bold tracking-wide ${isCall ? 'text-emerald-200' : 'text-rose-200'}`}>
+        {title}
+      </h3>
+      <p className="font-serif mt-1 text-sm text-slate-400">{subtitle}</p>
+    </div>
+  );
+}
+
+function OutcomeBanner({
+  variant,
+  title,
+  subtitle,
+}: {
+  variant: 'win' | 'loss' | 'draw';
+  title: string;
+  subtitle?: string;
+}) {
+  const styles = {
+    win: {
+      border: 'border-prime-gold/40',
+      bg: 'bg-gradient-to-br from-prime-gold/15 via-black/50 to-emerald-950/25',
+      iconBorder: 'border-prime-gold/50 bg-prime-gold/15',
+      iconColor: 'text-prime-gold-light',
+      titleColor: 'text-prime-gold-light text-glow-gold',
+      glyph: (
+        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ),
+    },
+    loss: {
+      border: 'border-rose-500/35',
+      bg: 'bg-gradient-to-br from-rose-950/35 via-black/55 to-black/80',
+      iconBorder: 'border-rose-400/40 bg-rose-500/10',
+      iconColor: 'text-rose-300',
+      titleColor: 'text-rose-200',
+      glyph: (
+        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+    draw: {
+      border: 'border-amber-500/35',
+      bg: 'bg-gradient-to-br from-amber-950/30 via-black/55 to-black/80',
+      iconBorder: 'border-amber-400/40 bg-amber-500/10',
+      iconColor: 'text-amber-300',
+      titleColor: 'text-amber-200',
+      glyph: (
+        <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 12h14" strokeLinecap="round" />
+        </svg>
+      ),
+    },
+  }[variant];
+
+  return (
+    <div className={`relative mb-4 overflow-hidden rounded-2xl border p-6 text-center ${styles.border} ${styles.bg}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(212,175,55,0.08),transparent_70%)]" />
+      <div className={`relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border ${styles.iconBorder} ${styles.iconColor}`}>
+        {styles.glyph}
+      </div>
+      <p className="font-display text-[10px] font-semibold uppercase tracking-[0.38em] text-prime-gold/60">
+        RESULT
+      </p>
+      <h3 className={`font-display mt-2 text-2xl font-bold tracking-wide ${styles.titleColor}`}>{title}</h3>
+      {subtitle && <p className="font-serif mt-2 text-sm text-slate-400">{subtitle}</p>}
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className={`rounded-xl border p-3 ${accent ? 'border-prime-gold/35 bg-prime-gold/10' : 'border-white/[0.06] bg-black/40'}`}>
+      <p className={`text-[10px] uppercase tracking-wider ${accent ? 'text-prime-gold/70' : 'text-slate-500'}`}>{label}</p>
+      <p className={`mt-1 font-semibold ${accent ? 'font-display text-prime-gold-light' : 'text-white'}`}>{value}</p>
+    </div>
+  );
+}
+
 export function SignalModal() {
   const {
     selectedAsset, signalPhase, signalResult, settlement, martingaleMultiplier,
@@ -521,80 +637,59 @@ export function SignalModal() {
           )}
 
           {signalPhase === 'result' && signalResult && (
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-              <div
-                className={`mb-4 rounded-2xl p-6 text-center ${
-                  isCall
-                    ? 'border border-neon-green/40 bg-gradient-to-br from-neon-green/30 to-emerald-900/30'
-                    : 'border border-red-500/40 bg-gradient-to-br from-red-500/30 to-red-900/30'
-                }`}
-              >
-                <motion.span
-                  className="text-6xl"
-                  animate={{ y: isCall ? [-5, 5, -5] : [5, -5, 5] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                >
-                  {isCall ? '⬆️' : '⬇️'}
-                </motion.span>
-                <h3 className={`mt-2 text-2xl font-bold ${isCall ? 'text-neon-green' : 'text-red-400'}`}>
-                  {isCall ? `${t.buy} / ${t.up}` : `${t.sell} / ${t.down}`}
-                </h3>
-                <p className="mt-1 text-sm text-white/80">{signalResult.direction}</p>
-              </div>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+              <DirectionHero
+                isCall={isCall}
+                title={isCall ? `${t.buy} · ${t.up}` : `${t.sell} · ${t.down}`}
+                subtitle={signalResult.direction}
+              />
 
               <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">{t.market}</p>
-                  <p className="font-semibold text-white">{signalResult.market}</p>
-                </div>
-                <div className="rounded-xl border border-prime-gold/40 bg-prime-gold/15 p-3">
-                  <p className="text-[10px] text-prime-gold/70">{t.time}</p>
-                  <p className="font-bold text-prime-gold-light text-glow-gold">{signalResult.timeframe}</p>
-                </div>
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">{t.entry}</p>
-                  <p className="font-semibold text-neon-blue">{formatPrice(signalResult.entryPrice)}</p>
-                </div>
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">{t.riskLevel}</p>
-                  <p className={`font-semibold ${
-                    riskLevel === 'low' ? 'text-neon-green' : riskLevel === 'medium' ? 'text-neon-yellow' : 'text-red-400'
-                  }`}>
-                    {riskLabel}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">{t.confidence}</p>
-                  <p className="font-semibold text-neon-purple">{signalResult.confidence}%</p>
-                </div>
-                <div className="rounded-xl bg-black/40 p-3">
-                  <p className="text-[10px] text-slate-500">RSI</p>
-                  <p className="font-semibold text-white">{signalResult.indicators.rsi}</p>
-                </div>
+                <StatCard label={t.market} value={signalResult.market} />
+                <StatCard label={t.time} value={signalResult.timeframe} accent />
+                <StatCard label={t.entry} value={formatPrice(signalResult.entryPrice)} />
+                <StatCard
+                  label={t.riskLevel}
+                  value={riskLabel}
+                />
+                <StatCard label={t.confidence} value={`${signalResult.confidence}%`} />
+                <StatCard label="RSI" value={String(signalResult.indicators.rsi)} />
               </div>
 
-              <div className="mb-4 text-center">
-                <p className="text-xs text-slate-500">{t.countdown}</p>
+              <div className="mb-4 rounded-2xl border border-prime-gold/25 bg-black/50 p-5 text-center">
+                <p className="font-display text-[10px] font-semibold uppercase tracking-[0.3em] text-prime-gold/60">
+                  {t.countdown}
+                </p>
                 <motion.p
-                  className={`font-display text-3xl font-bold ${seconds <= 5 ? 'text-red-400' : 'text-neon-blue'}`}
-                  animate={seconds <= 5 ? { opacity: [1, 0.4, 1] } : { opacity: 1 }}
-                  transition={{ duration: 0.8, repeat: seconds <= 5 ? Infinity : 0 }}
+                  className={`font-display mt-2 text-4xl font-bold tracking-wider ${
+                    seconds <= 5 ? 'text-rose-300' : 'text-prime-gold-light text-glow-gold'
+                  }`}
+                  animate={seconds <= 5 ? { opacity: [1, 0.45, 1] } : { opacity: 1 }}
+                  transition={{ duration: 0.85, repeat: seconds <= 5 ? Infinity : 0 }}
                 >
                   {formatted}
                 </motion.p>
+                <div className="mx-auto mt-3 h-1 w-24 overflow-hidden rounded-full bg-white/10">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-prime-gold/80 to-prime-gold-light"
+                    animate={{ scaleX: [1, 0.15, 1] }}
+                    transition={{ duration: Math.max(seconds, 1), ease: 'linear', repeat: Infinity }}
+                    style={{ transformOrigin: 'left' }}
+                  />
+                </div>
               </div>
 
-              <div className="mb-4 rounded-xl bg-black/40 p-3 text-center">
-                <p className="text-[10px] text-slate-500">{t.currentPrice}</p>
+              <div className="mb-4 rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-4 text-center">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">{t.currentPrice}</p>
                 <motion.p
                   key={signalCurrentPrice ?? 0}
-                  initial={{ scale: 1.02 }}
-                  animate={{ scale: 1 }}
-                  className="text-xl font-bold text-prime-gold"
+                  initial={{ opacity: 0.7, y: -2 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="font-display mt-1 text-2xl font-bold tracking-wide text-prime-gold-light"
                 >
                   {formatPrice(signalCurrentPrice ?? signalResult.entryPrice)}
                 </motion.p>
-                <p className="mt-1 text-[10px] text-slate-600">
+                <p className="font-serif mt-2 text-xs text-slate-500">
                   {t.entry}: {formatPrice(signalResult.entryPrice)} · {t.liveFromPo}
                 </p>
               </div>
@@ -604,60 +699,41 @@ export function SignalModal() {
           )}
 
           {signalPhase === 'settled' && signalResult && settlement && (
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
               {settlement.outcome === 'win' ? (
-                <div className="mb-4 rounded-2xl border border-neon-green/40 bg-gradient-to-br from-neon-green/20 to-emerald-900/20 p-6 text-center">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-neon-green text-3xl text-black">
-                    ✓
-                  </div>
-                  <h3 className="text-2xl font-bold text-neon-green text-glow-green">{t.tradeWon}</h3>
-                  {overlayLabel && (
-                    <p className="mt-2 text-sm text-emerald-300">
-                      {overlayLabel} — {t.successCoverage}
-                    </p>
-                  )}
-                </div>
+                <OutcomeBanner
+                  variant="win"
+                  title={t.tradeWon}
+                  subtitle={overlayLabel ? `${overlayLabel} — ${t.successCoverage}` : undefined}
+                />
               ) : settlement.outcome === 'undetermined' ? (
-                <div className="mb-4 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/20 to-amber-900/20 p-6 text-center">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500 text-3xl text-black">
-                    =
-                  </div>
-                  <h3 className="text-2xl font-bold text-amber-300">{t.tradeDraw}</h3>
-                  <p className="mt-2 text-xs text-slate-400">{t.resultUndetermined}</p>
-                </div>
+                <OutcomeBanner variant="draw" title={t.tradeDraw} subtitle={t.resultUndetermined} />
               ) : (
-                <div className="mb-4 rounded-2xl border border-red-500/40 bg-gradient-to-br from-red-500/20 to-red-900/20 p-6 text-center">
-                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500 text-3xl text-white">
-                    ✕
-                  </div>
-                  <h3 className="text-2xl font-bold text-red-400">{t.tradeLost}</h3>
-                  {nextMultiplier && (
-                    <p className="mt-3 text-sm text-slate-400">{t.martingaleHint}</p>
-                  )}
-                  {!nextMultiplier && (
-                    <p className="mt-3 text-sm text-slate-400">{t.stopTradingAsset}</p>
-                  )}
-                </div>
+                <OutcomeBanner
+                  variant="loss"
+                  title={t.tradeLost}
+                  subtitle={nextMultiplier ? t.martingaleHint : t.stopTradingAsset}
+                />
               )}
 
-              <div className="mb-4 space-y-2 rounded-2xl bg-black/40 p-4 text-sm">
+              <div className="mb-4 space-y-0 rounded-2xl border border-white/[0.06] bg-black/45 p-4 text-sm">
                 <div className="flex justify-between border-b border-white/5 pb-2">
                   <span className="text-slate-500">{t.asset}</span>
-                  <span className="font-semibold text-white">{selectedAsset.symbol}</span>
+                  <span className="font-display font-semibold tracking-wide text-white">{selectedAsset.symbol}</span>
                 </div>
                 <div className="flex justify-between border-b border-white/5 py-2">
                   <span className="text-slate-500">{t.direction}</span>
-                  <span className={`font-bold ${settlement.direction === 'CALL' ? 'text-neon-green' : 'text-red-400'}`}>
-                    {settlement.direction === 'CALL' ? `${t.buy} ↗` : `${t.sell} ↘`}
+                  <span className={`font-display font-bold tracking-wide ${settlement.direction === 'CALL' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {settlement.direction === 'CALL' ? t.buy : t.sell}
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-white/5 py-2">
                   <span className="text-slate-500">{t.entry}</span>
-                  <span className="font-semibold text-prime-gold">{formatPrice(settlement.entryPrice)}</span>
+                  <span className="font-semibold text-prime-gold-light">{formatPrice(settlement.entryPrice)}</span>
                 </div>
                 <div className="flex justify-between pt-2">
                   <span className="text-slate-500">{t.exitPrice}</span>
-                  <span className="font-semibold text-prime-gold">
+                  <span className="font-semibold text-prime-gold-light">
                     {settlement.exitPrice != null ? formatPrice(settlement.exitPrice) : '—'}
                   </span>
                 </div>
@@ -670,7 +746,7 @@ export function SignalModal() {
                   onClick={() => void handleMartingaleRetry()}
                   className="btn-gold mb-3 w-full rounded-2xl py-4 text-sm font-bold"
                 >
-                  🔄 {t.getCoverage} — {nextMultiplier === 2 ? t.coverageOverlay1 : t.coverageOverlay2}
+                  {t.getCoverage} — {nextMultiplier === 2 ? t.coverageOverlay1 : t.coverageOverlay2}
                 </motion.button>
               )}
 

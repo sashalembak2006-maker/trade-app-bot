@@ -168,6 +168,8 @@ export interface BridgeAssetInput {
   poAsset?: string;
   /** Live price for the ACTIVE pair only. Omit/null for list-only assets. */
   price?: number | null;
+  /** Last real PO/catalog quote — anchors hybrid micro-ticks when live stream stops. */
+  lastKnownPrice?: number | null;
   /** True when price is a real PO WebSocket/DOM tick (not extension catalog pulse). */
   live?: boolean;
   /** Extension UI-only tick — must never drive signal entry or getBridgeQuote. */

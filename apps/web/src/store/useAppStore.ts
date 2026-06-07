@@ -112,8 +112,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   updateAssetPrice: (symbol, price, payout, change) => {
     const pct = Number.isFinite(change) ? Math.round(change * 100) / 100 : 0;
-    const pricePatch =
-      price != null && isPlausiblePrice(price) ? { price, lastKnownPrice: price } : {};
+    const pricePatch = price != null && isPlausiblePrice(price) ? { price } : {};
     const applyPatch = (a: Asset) =>
       a.symbol === symbol ? { ...a, payout, change: pct, ...pricePatch } : a;
     return set({

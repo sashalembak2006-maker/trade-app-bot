@@ -190,8 +190,17 @@ function ingestCatalogAssets(assets) {
     };
     if (isReasonablePrice(a.price, a.symbol)) {
       next.price = a.price;
+      next.lastKnownPrice = a.price;
       if (prev?.price != null && prev.price !== a.price) next.live = true;
-    } else if (prev?.price != null) next.price = prev.price;
+    } else if (prev?.price != null) {
+      next.price = prev.price;
+      next.lastKnownPrice = prev.lastKnownPrice ?? prev.price;
+    }
+    if (isReasonablePrice(a.lastKnownPrice, a.symbol)) {
+      next.lastKnownPrice = a.lastKnownPrice;
+    } else if (prev?.lastKnownPrice != null) {
+      next.lastKnownPrice = prev.lastKnownPrice;
+    }
     if (a.live === true) next.live = true;
     if (a.synthetic === true) next.synthetic = true;
     catalogAssets.set(a.symbol, next);
@@ -247,9 +256,16 @@ function mergeFrameAssets() {
       };
       if (isReasonablePrice(a.price, a.symbol)) {
         next.price = a.price;
+        next.lastKnownPrice = a.price;
         if (prev?.price != null && prev.price !== a.price) next.live = true;
       } else if (prev?.price != null) {
         next.price = prev.price;
+        next.lastKnownPrice = prev.lastKnownPrice ?? prev.price;
+      }
+      if (isReasonablePrice(a.lastKnownPrice, a.symbol)) {
+        next.lastKnownPrice = a.lastKnownPrice;
+      } else if (prev?.lastKnownPrice != null) {
+        next.lastKnownPrice = prev.lastKnownPrice;
       }
       if (a.live === true) next.live = true;
       if (a.synthetic === true) next.synthetic = true;
@@ -266,6 +282,7 @@ function mergeFrameAssets() {
       ...a,
       payout: live.payout ?? a.payout,
       price: live.price ?? a.price,
+      lastKnownPrice: live.lastKnownPrice ?? live.price ?? a.lastKnownPrice ?? a.price,
       category: live.category ?? a.category,
       isOTC: live.isOTC ?? a.isOTC,
       timestamp: live.timestamp ?? a.timestamp,

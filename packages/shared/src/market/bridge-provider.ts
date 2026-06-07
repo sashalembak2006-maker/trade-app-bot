@@ -383,8 +383,11 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       const isOTC = a.isOTC ?? /otc/i.test(a.symbol);
       const prev = this.assets.get(a.symbol);
       const rawPrice = typeof a.price === 'number' ? a.price : null;
+      const rawLkp = typeof a.lastKnownPrice === 'number' ? a.lastKnownPrice : null;
       const validPrice =
         rawPrice != null && isPlausibleMarketPrice(rawPrice, a.symbol) ? rawPrice : null;
+      const validLkp =
+        rawLkp != null && isPlausibleMarketPrice(rawLkp, a.symbol) ? rawLkp : null;
       const prevLkp =
         prev?.lastKnownPrice != null && isPlausibleMarketPrice(prev.lastKnownPrice, a.symbol)
           ? prev.lastKnownPrice
@@ -427,9 +430,11 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       const nextLastKnown =
         validPrice != null && !isSyntheticPulse
           ? validPrice
-          : isLiveTick
-            ? (validPrice ?? prevLkp)
-            : prevLkp;
+          : validLkp != null
+            ? validLkp
+            : isLiveTick
+              ? (validPrice ?? prevLkp)
+              : prevLkp;
       const lastKnownUpdated = nextLastKnown != null && nextLastKnown !== prevLkp;
 
       const stored: StoredAsset = {
@@ -446,6 +451,15 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       };
       this.assets.set(a.symbol, stored);
       count++;
+
+      if (
+        syntheticFallbackEnabled &&
+        stored.lastKnownPrice != null &&
+        isPlausibleMarketPrice(stored.lastKnownPrice, a.symbol) &&
+        !this.synthetic.has(a.symbol)
+      ) {
+        this.synthetic.anchor(a.symbol, stored.lastKnownPrice);
+      }
 
       let emitPrice =
         validPrice ??
