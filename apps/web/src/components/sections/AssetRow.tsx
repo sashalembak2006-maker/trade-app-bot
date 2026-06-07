@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import type { Asset } from '../../types';
 import { useCatalogPricePulse } from '../../hooks/useCatalogPricePulse';
 import { formatPercentChange } from '../../utils/format';
+import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
 
 interface AssetRowProps {
@@ -21,8 +22,12 @@ function AssetRow({
   onSelect,
   onToggleFavorite,
 }: AssetRowProps) {
-  const anchor = a.lastKnownPrice ?? a.price;
-  const displayPrice = useCatalogPricePulse(a.symbol, anchor, a.price);
+  const rawAnchor = a.lastKnownPrice ?? a.price;
+  const anchor =
+    rawAnchor != null && isPlausibleAssetPrice(rawAnchor, a.symbol) ? rawAnchor : null;
+  const livePrice =
+    a.price != null && isPlausibleAssetPrice(a.price, a.symbol) ? a.price : null;
+  const displayPrice = useCatalogPricePulse(a.symbol, anchor, livePrice);
 
   return (
     <motion.button

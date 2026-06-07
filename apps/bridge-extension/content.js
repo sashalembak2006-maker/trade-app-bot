@@ -1086,9 +1086,7 @@
   function resolveCatalogAnchor(symbol, payout) {
     const remembered = lastKnownPrices.get(symbol);
     if (remembered != null && isValidPrice(symbol, remembered, payout)) return remembered;
-    const scraped = catalogPulsePrices.get(symbol)?.price;
-    if (scraped != null && isValidPrice(symbol, scraped, payout)) return scraped;
-    return seededBasePrice(symbol);
+    return null;
   }
 
   function finalizeAssets(assets, activeSymbol) {
@@ -1129,8 +1127,9 @@
         } else {
           delete row.price;
           delete row.live;
-          row.lastKnownPrice = anchor;
-          rememberPrice(row.symbol, anchor, row.payout);
+          const remembered = lastKnownPrices.get(row.symbol);
+          row.lastKnownPrice =
+            remembered != null && isValidPrice(row.symbol, remembered, row.payout) ? remembered : null;
         }
         return row;
       });
@@ -1145,14 +1144,16 @@
 
     for (const a of wsAssets.values()) {
       if (!a?.symbol || typeof a.payout !== 'number') continue;
-      const anchor = resolveCatalogAnchor(a.symbol, a.payout);
+      const remembered = lastKnownPrices.get(a.symbol);
       const entry = withCategory({
         symbol: a.symbol,
         payout: a.payout,
         isOTC: a.isOTC ?? /otc/i.test(a.symbol),
         category: a.category,
         timestamp: a.timestamp ?? Date.now(),
-        lastKnownPrice: a.lastKnownPrice ?? anchor,
+        ...(remembered != null && isValidPrice(a.symbol, remembered, a.payout)
+          ? { lastKnownPrice: remembered }
+          : {}),
       });
       const p = sanitizeWsPrice(a.price, a.symbol, a.payout);
       if (p != null) {
@@ -1295,7 +1296,7 @@
         remembered ??
         (scrapedPrice != null && isValidPrice(a.symbol, scrapedPrice, a.payout ?? prev?.payout)
           ? scrapedPrice
-          : seededBasePrice(a.symbol));
+          : null);
       wsAssets.set(
         a.symbol,
         withCategory({
@@ -1303,7 +1304,7 @@
           ...a,
           payout: a.payout ?? prev?.payout,
           price: scrapedPrice ?? prev?.price,
-          lastKnownPrice: anchor,
+          ...(anchor != null ? { lastKnownPrice: anchor } : {}),
           live: a.live === true ? true : prev?.live === true,
           timestamp: Date.now(),
         }),

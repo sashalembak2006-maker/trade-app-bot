@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GoldBackground } from '../layout/GoldBackground';
 import type { Language } from '../../types';
 
-const STORAGE_KEY = 'prime-trade-welcome-v2';
-const AUTO_DISMISS_MS = 3200;
+const STORAGE_KEY = 'prime-trade-welcome-v3';
+const AUTO_DISMISS_MS = 4500;
 
 export function welcomeStorageKey(telegramId?: number) {
   return telegramId ? `${STORAGE_KEY}-${telegramId}` : STORAGE_KEY;
@@ -48,16 +48,18 @@ export function WelcomeSplash({ language, telegramId, onDone }: WelcomeSplashPro
 
   const lines = uk
     ? {
-        greet: 'Вітаємо!',
-        sub: 'Ми раді бачити вас у Prime Trade Bot',
-        punch: 'Вам сподобається — побачите!',
-        tap: 'Натисніть, щоб продовжити',
+        greet: 'Ласкаво просимо',
+        sub: 'Prime Trade Bot — ваш преміум-помічник для OTC-торгівлі',
+        punch: 'Live-ціни з Pocket Option · точні сигнали · VIP-аналітика',
+        hint: 'Відкрийте PO на ПК з Bridge — і всі пари оживуть у реальному часі',
+        tap: 'Почати',
       }
     : {
-        greet: 'Welcome!',
-        sub: "We're glad to see you in Prime Trade Bot",
-        punch: "You're going to love it — you'll see!",
-        tap: 'Tap to continue',
+        greet: 'Welcome',
+        sub: 'Prime Trade Bot — your premium OTC trading assistant',
+        punch: 'Live PO prices · precise signals · VIP analytics',
+        hint: 'Open PO on PC with Bridge enabled for real-time pairs',
+        tap: 'Get started',
       };
 
   return (
@@ -99,12 +101,20 @@ export function WelcomeSplash({ language, telegramId, onDone }: WelcomeSplashPro
               {lines.sub}
             </motion.p>
             <motion.p
-              className="font-display mt-4 text-base font-semibold tracking-wide text-prime-gold-light"
+              className="font-display mt-4 text-sm font-medium tracking-wide text-prime-gold/90"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.85, delay: 1.45 }}
             >
               {lines.punch}
+            </motion.p>
+            <motion.p
+              className="font-serif mt-3 text-xs leading-relaxed text-slate-500"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.75, delay: 1.85 }}
+            >
+              {lines.hint}
             </motion.p>
             <motion.p
               className="mt-8 text-[10px] uppercase tracking-[0.2em] text-slate-500"

@@ -18,7 +18,7 @@ import {
   type MarketDataProvider,
 } from './provider.js';
 import { isPlausibleMarketPrice, isForexOtcSymbol } from './price-validation.js';
-import { SyntheticPriceEngine, syntheticBasePrice } from './synthetic-price.js';
+import { SyntheticPriceEngine } from './synthetic-price.js';
 import { resolveAssetFlags } from './asset-flags.js';
 import { normalizeAssetCategory, resolveAssetCategory } from './asset-category.js';
 
@@ -104,19 +104,11 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     };
   }
 
-  /** Catalog anchor when PO sent payout only — hybrid list display. */
-  private catalogAnchor(symbol: string, payout: number): number {
-    return syntheticBasePrice(symbol);
-  }
-
-  /** Real PO / catalog anchor — hybrid micro-ticks when synthetic fallback on. */
+  /** Real PO / catalog anchor only — never hash-seeded fake quotes. */
   private displayPrice(a: StoredAsset): number | null {
     if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
     if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
       return a.lastKnownPrice;
-    }
-    if (a.payout >= 1 && a.payout <= 100 && syntheticFallbackEnabled) {
-      return this.catalogAnchor(a.symbol, a.payout);
     }
     return null;
   }
@@ -146,9 +138,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         ? prev.lastKnownPrice
         : prev?.price != null && isPlausibleMarketPrice(prev.price, symbol)
           ? prev.price
-          : prev?.payout != null
-            ? this.catalogAnchor(symbol, prev.payout)
-            : null;
+          : null;
     if (anchor == null) {
       throw new NoLivePriceError(`No anchored PO price for ${symbol}`);
     }
@@ -193,11 +183,6 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, symbol)
         ? a.lastKnownPrice
         : null;
-    if (anchor == null && syntheticFallbackEnabled && a.payout >= 1) {
-      anchor = this.catalogAnchor(symbol, a.payout);
-      a = { ...a, lastKnownPrice: anchor };
-      this.assets.set(symbol, a);
-    }
     if (anchor == null) return a;
     if (!this.synthetic.has(symbol)) this.synthetic.anchor(symbol, anchor);
     let price = this.synthetic.tick(symbol);
@@ -358,23 +343,22 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
     const a = this.assets.get(symbol);
     if (!a) return null;
-    if (syntheticFallbackEnabled) {
-      const hybrid = this.displayPrice(a);
-      if (hybrid != null) return hybrid;
-    }
-    const quote = this.bridgeQuotePrice(a);
-    if (quote != null) {
-      if (maxAgeMs > 0 && a.bridgeLiveAt > 0 && Date.now() - a.bridgeLiveAt > maxAgeMs) {
-        const display = this.displayPrice(a);
-        if (display != null) return display;
-        return null;
+    if (this.isBridgeLive(a)) {
+      if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
+      if (
+        a.lastKnownPrice != null &&
+        isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
+      ) {
+        return a.lastKnownPrice;
       }
-      return quote;
     }
     const display = this.displayPrice(a);
     if (display == null) return null;
     if (maxAgeMs > 0 && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt > maxAgeMs) {
-      return syntheticFallbackEnabled ? display : null;
+      if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
+        return a.lastKnownPrice;
+      }
+      return null;
     }
     return display;
   }
@@ -447,14 +431,6 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
             : isLiveTick
               ? (validPrice ?? prevLkp)
               : prevLkp;
-      if (
-        nextLastKnown == null &&
-        typeof a.payout === 'number' &&
-        a.payout >= 1 &&
-        a.payout <= 100
-      ) {
-        nextLastKnown = this.catalogAnchor(a.symbol, a.payout);
-      }
       const lastKnownUpdated = nextLastKnown != null && nextLastKnown !== prevLkp;
 
       const stored: StoredAsset = {

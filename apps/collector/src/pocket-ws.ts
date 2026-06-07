@@ -79,13 +79,15 @@ export class PocketWsClient {
   /** Bridge ingest: payout for all pairs; live price only for the active chart symbol. */
   assetsForBridge(): BridgeAssetInput[] {
     const active = this.activeSymbol;
-    return Array.from(this.assets.values()).map((a) => {
-      if (!active || a.symbol !== active) {
-        const { price: _p, ...rest } = a;
-        return rest;
-      }
-      return a;
-    });
+    return Array.from(this.assets.values())
+      .filter((a) => /\sOTC$/i.test(a.symbol) && /^[A-Z]{3}\/[A-Z]{3}/i.test(a.symbol.replace(/\s+OTC$/i, '')))
+      .map((a) => {
+        if (!active || a.symbol !== active) {
+          const { price: _p, ...rest } = a;
+          return rest;
+        }
+        return { ...a, live: true };
+      });
   }
 
   private connect(): void {
@@ -159,7 +161,7 @@ export class PocketWsClient {
             this.activeSymbol = sym;
             const prev = this.assets.get(sym);
             if (prev) {
-              this.assets.set(sym, { ...prev, price: tick.price, timestamp: Date.now() });
+              this.assets.set(sym, { ...prev, price: tick.price, timestamp: Date.now(), live: true });
             }
           }
         }

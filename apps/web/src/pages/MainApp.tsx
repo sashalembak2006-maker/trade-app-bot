@@ -32,12 +32,21 @@ interface MainAppProps {
 }
 
 export function MainApp({ limited = false, access, telegramId, apiError, onRefreshAccess }: MainAppProps) {
-  const { language, setAssets, marketStatus, setMarketStatus, accessStatus } = useAppStore();
+  const { language, setAssets, marketStatus, setMarketStatus, accessStatus, userProfile } = useAppStore();
   const [showRegistration, setShowRegistration] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcome(telegramId));
+  const [showWelcome, setShowWelcome] = useState(false);
   const effectiveLimited = limited || !accessStatus?.hasAppAccess;
   const t = useT(language);
   useWebSocket();
+
+  useEffect(() => {
+    if (!telegramId) return;
+    if (hasSeenWelcome(telegramId)) return;
+    const isNewcomer = (userProfile?.signalCount ?? 0) === 0;
+    if (isNewcomer || userProfile == null) {
+      setShowWelcome(true);
+    }
+  }, [telegramId, userProfile?.signalCount, userProfile]);
 
   const enableDemoMode = async () => {
     try {

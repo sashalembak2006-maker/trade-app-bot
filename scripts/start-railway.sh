@@ -17,8 +17,13 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 
-echo "[railway] Starting Telegram bot..."
-npm run start -w @trade-app/bot &
+(
+  while true; do
+    echo "[railway] Starting Telegram bot..."
+    npm run start -w @trade-app/bot || echo "[railway] Bot exited, restarting in 5s..."
+    sleep 5
+  done
+) &
 BOT_PID=$!
 
 if [ -n "$PO_AUTH_MESSAGE" ] && [ -n "$PO_WS_URL" ]; then
