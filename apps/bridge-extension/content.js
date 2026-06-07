@@ -1146,6 +1146,47 @@
     startPriceObserver();
   }
 
+  function navigateToDemoIfNeeded() {
+    const p = (location.pathname || '').toLowerCase();
+    if (p.includes('quick-high-low') || p.includes('demo-quick')) return;
+    const link = document.querySelector(
+      'a[href*="demo-quick-high-low"], a[href*="quick-high-low"]',
+    );
+    if (link) {
+      link.click();
+      console.log('[PRIME Bridge] → demo trading (link click)');
+      return;
+    }
+    if (/\/cabinet\/?$/.test(p) || /\/cabinet\/$/.test(p)) {
+      location.href = `${location.origin}/en/cabinet/demo-quick-high-low/`;
+      console.log('[PRIME Bridge] → demo trading (redirect)');
+    }
+  }
+
+  function ensureAssetCatalogOpen() {
+    const hasList = document.querySelector(
+      '.assets-block__item, .alist__item, [class*="assets-block__item"], [class*="assets-list"] [class*="item"]',
+    );
+    if (hasList) return true;
+    const openers = [
+      '.current-symbol',
+      '.current-symbol_cropped',
+      '[class*="asset-select"]',
+      '[class*="current-symbol"]',
+      '[class*="pair-info"]',
+      '.block--pair',
+    ];
+    for (const sel of openers) {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        if (typeof el.click === 'function') el.click();
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** PO sends updateAssets only for the open catalog tab — rotate tabs to collect forex/crypto/stocks. */
   const CATEGORY_TAB_RULES = [
     { re: /currencies\s+otc|валюти\s+otc|валюты\s+otc|forex\s+otc/i, label: 'forex_otc' },
@@ -1159,18 +1200,17 @@
   function findCategoryTabs() {
     const found = [];
     const seen = new Set();
-    const roots = document.querySelectorAll(
-      '.assets-block, .alist, [class*="assets-block"], [class*="assets-list"], [class*="asset-tabs"], [class*="catalog"]',
-    );
-    const searchRoots = roots.length ? Array.from(roots) : [document.body];
+    const seenLabels = new Set();
+    const searchRoots = [document.body];
     for (const root of searchRoots) {
-      root.querySelectorAll('button, a, [role="tab"], li, [class*="tab"], [class*="filter"]').forEach((el) => {
+      root.querySelectorAll('button, a, [role="tab"], li, span, div').forEach((el) => {
         if (seen.has(el)) return;
         const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!text || text.length > 48) return;
+        if (!text || text.length > 48 || text.length < 3) return;
         for (const rule of CATEGORY_TAB_RULES) {
-          if (rule.re.test(text)) {
+          if (rule.re.test(text) && !seenLabels.has(rule.label)) {
             seen.add(el);
+            seenLabels.add(rule.label);
             found.push({ el, text, label: rule.label });
             break;
           }
@@ -1182,6 +1222,7 @@
 
   let categoryTabIndex = 0;
   function rotateCategoryTab() {
+    ensureAssetCatalogOpen();
     const tabs = findCategoryTabs();
     if (!tabs.length) return;
     const tab = tabs[categoryTabIndex % tabs.length];
@@ -1196,8 +1237,12 @@
   }
 
   function startCategoryRotation() {
-    setTimeout(rotateCategoryTab, 2500);
-    setInterval(rotateCategoryTab, 6000);
+    setTimeout(() => {
+      navigateToDemoIfNeeded();
+      ensureAssetCatalogOpen();
+    }, 1500);
+    setTimeout(rotateCategoryTab, 3000);
+    setInterval(rotateCategoryTab, 2500);
   }
 
   if (document.readyState === 'loading') {

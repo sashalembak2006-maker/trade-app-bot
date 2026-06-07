@@ -123,15 +123,11 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   private ensureSyntheticTimer(): void {
     if (this.syntheticTimer || !syntheticFallbackEnabled) return;
     this.syntheticTimer = setInterval(() => {
-      const symbols = new Set<string>();
-      for (const l of this.listeners) {
-        for (const s of l.symbols) symbols.add(s);
-      }
+      if (this.assets.size === 0) return;
       const now = Date.now();
-      for (const symbol of symbols) {
-        const a = this.assets.get(symbol);
-        if (!a || this.isLive(a)) continue;
-        const price = this.synthetic.tick(symbol);
+      for (const [symbol, a] of this.assets) {
+        if (this.isLive(a)) continue;
+        const price = a.lastKnownPrice != null ? this.synthetic.tick(symbol) : this.synthetic.seed(symbol);
         a.price = price;
         a.lastKnownPrice = price;
         a.priceUpdatedAt = now;
@@ -139,7 +135,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         this.usingSynthetic = true;
         this.emit({ symbol, price, payout: a.payout, change: a.change, ts: now });
       }
-    }, 500);
+    }, 400);
   }
 
   hasLivePrice(symbol: string): boolean {
@@ -272,7 +268,10 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         });
       }
     }
-    if (count > 0) this.lastUpdate = now;
+    if (count > 0) {
+      this.lastUpdate = now;
+      if (syntheticFallbackEnabled) this.ensureSyntheticTimer();
+    }
     return count;
   }
 

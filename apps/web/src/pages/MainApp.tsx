@@ -106,7 +106,7 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
           if (s.mode === 'live') reloadAssets();
         })
         .catch(() => { /* keep last status */ });
-    }, 2000);
+    }, 1000);
     return () => clearInterval(id);
   }, [setMarketStatus, setAssets]);
 
