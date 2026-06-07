@@ -92,7 +92,7 @@ const t = {
     dataSourceStale: 'ДАНІ ЗАСТАРІЛІ',
     bridgeNotConnectedTitle: 'Сервер не отримує дані з Pocket Option',
     bridgeNotConnectedHint:
-      '1) Запустіть API: npm run server  2) Відкрийте Pocket Option у Chrome  3) Bridge extension → Connected  4) Backend URL: http://127.0.0.1:3001',
+      'Відкрийте Pocket Option у Chrome → Bridge extension → вставте Backend URL сервера → Secret → Status Connected ✓',
     bridgeStaleTitle: 'Дані застарілі — Bridge не надсилає оновлення',
     bridgeStaleHint:
       'Відкрийте Pocket Option (торговий термінал) → F5 → перевірте popup розширення: Status Connected ✓. Потім оновіть /api/health — bridge.connected має бути true.',
@@ -190,7 +190,7 @@ const t = {
     dataSourceStale: 'DATA SOURCE STALE',
     bridgeNotConnectedTitle: 'Server not receiving Pocket Option data',
     bridgeNotConnectedHint:
-      '1) Start API: npm run server  2) Open Pocket Option in Chrome  3) Bridge extension → Connected  4) Backend URL: http://127.0.0.1:3001',
+      'Open Pocket Option in Chrome → Bridge extension → set server Backend URL + Secret → Status Connected ✓',
     bridgeStaleTitle: 'Data is stale — Bridge not sending updates',
     bridgeStaleHint:
       'Open Pocket Option trading terminal → F5 → extension popup must show Connected ✓. Then refresh /api/health — bridge.connected should be true.',

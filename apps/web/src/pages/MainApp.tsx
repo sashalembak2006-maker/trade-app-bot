@@ -20,6 +20,7 @@ import { useT } from '../i18n/translations';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { api } from '../services/api';
 import { logger } from '../services/logger';
+import { getRuntimeApiUrl } from '../services/runtime-config';
 
 interface MainAppProps {
   limited?: boolean;
@@ -114,6 +115,10 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     marketStatus?.mode === 'live' &&
     !marketStatus.configured &&
     (marketStatus.assetCount ?? 0) === 0;
+  const apiBase =
+    getRuntimeApiUrl() || 'https://prime-trade-production.up.railway.app';
+  const bridgeHint = `${t.bridgeNotConnectedHint}\n\nBackend URL:\n${apiBase}`;
+
   const bridgeStale =
     marketStatus?.mode === 'live' &&
     !marketStatus.configured &&
@@ -168,7 +173,7 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
         {(platformUnavailable || notConfigured) && (
           <div className="mx-4 mt-2 space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
             <p className="text-center font-bold">⏳ {t.bridgeNotConnectedTitle}</p>
-            <p className="text-center text-[11px] leading-relaxed text-amber-100/90">{t.bridgeNotConnectedHint}</p>
+            <p className="whitespace-pre-line text-center text-[11px] leading-relaxed text-amber-100/90">{bridgeHint}</p>
             <button
               type="button"
               onClick={() => void enableDemoMode()}
