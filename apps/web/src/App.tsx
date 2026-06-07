@@ -52,7 +52,7 @@ function AppRouter() {
     );
   }
 
-  if (accessStatus?.isBanned || accessStatus?.hasLimitedAccess === false) {
+  if (accessStatus?.isBanned || !accessStatus?.hasLimitedAccess) {
     return (
       <AccessGate
         access={accessStatus}

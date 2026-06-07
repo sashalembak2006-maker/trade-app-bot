@@ -36,9 +36,10 @@ if ! $CLI link -p "$PROJECT" -s "$SERVICE" -e production 2>/dev/null; then
   }
 fi
 
-echo "→ Вмикаємо hybrid ціни..."
+echo "→ Вмикаємо hybrid ціни + тимчасовий доступ (OPEN_ACCESS)..."
 $CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=true" --service "$SERVICE"
 $CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service "$SERVICE"
+$CLI variables set "OPEN_ACCESS=true" --service "$SERVICE"
 
 echo "→ Deploy локального коду на Railway (2–3 хв)..."
 $CLI up --detach --service "$SERVICE"

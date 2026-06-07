@@ -33,8 +33,15 @@ export function serializeUser(user: User) {
   };
 }
 
+/** Temporary: allow all non-banned users while bot is in development. Set OPEN_ACCESS=false before sale. */
+function isOpenAccessMode(): boolean {
+  const v = process.env.OPEN_ACCESS?.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 export function hasAppAccess(user: User): boolean {
   if (user.isBanned) return false;
+  if (isOpenAccessMode()) return true;
   return (
     user.status === 'deposited' ||
     user.status === 'vip' ||
@@ -47,10 +54,13 @@ export function hasAppAccess(user: User): boolean {
 /** Non-banned invited users or those with full app access may open the Mini App. */
 export function hasLimitedAccess(user: User): boolean {
   if (user.isBanned) return false;
+  if (isOpenAccessMode()) return true;
   return user.isInvited || hasAppAccess(user);
 }
 
 export function hasSignalAccess(user: User): boolean {
+  if (user.isBanned) return false;
+  if (isOpenAccessMode()) return true;
   return hasAppAccess(user);
 }
 

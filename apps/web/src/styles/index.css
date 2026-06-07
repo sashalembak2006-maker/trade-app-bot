@@ -3,6 +3,7 @@
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-display: 'Orbitron', 'Cinzel', serif;
+  --font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
 
   --color-prime-bg: #050505;
   --color-prime-surface: #0d0d0d;
@@ -17,6 +18,9 @@
   --color-neon-blue: #3b82f6;
   --color-cyber-bg: #050508;
 }
+
+.font-display { font-family: var(--font-display); }
+.font-serif { font-family: var(--font-serif); }
 
 * {
   box-sizing: border-box;
