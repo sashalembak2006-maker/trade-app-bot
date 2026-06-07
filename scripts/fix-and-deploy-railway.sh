@@ -7,7 +7,7 @@ BRIDGE_SECRETS="${BRIDGE_SECRETS:-9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5}"
 CLI="npx --yes @railway/cli@5.4.2"
 
 if [ -z "${RAILWAY_TOKEN:-}" ]; then
-  RAILWAY_TOKEN="$(python3 -c "import json; print(json.load(open('$HOME/.railway/config.json'))['user']['accessToken'])")"
+  RAILWAY_TOKEN="$(python3 -c "import json; c=json.load(open('$HOME/.railway/config.json')); print(c.get('user',{}).get('token') or c.get('user',{}).get('accessToken',''))")"
   export RAILWAY_TOKEN
 fi
 

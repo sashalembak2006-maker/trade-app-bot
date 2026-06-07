@@ -26,6 +26,7 @@ RUN npm run db:generate -w @trade-app/api \
   && npm run build -w @trade-app/bot \
   && npm run build -w @trade-app/collector \
   && npm run build -w @trade-app/web \
+  && test -f /app/apps/web/dist/index.html \
   && cd apps/api && DATABASE_URL="file:./prod.db" npx prisma db push --accept-data-loss
 
 ENV NODE_ENV=production
