@@ -63,6 +63,20 @@ export class PocketWsClient {
     };
   }
 
+  /** Rotate through OTC pairs when no user signal focus — real updateStream ticks. */
+  scanNextOtc(): void {
+    const symbols = Array.from(this.assets.keys())
+      .filter((s) => /\sOTC$/i.test(s) && /^[A-Z]{3}\/[A-Z]{3}/i.test(s.replace(/\s+OTC$/i, '')))
+      .sort();
+    if (symbols.length === 0) return;
+    if (!this.scanIndex) this.scanIndex = 0;
+    const sym = symbols[this.scanIndex % symbols.length];
+    this.scanIndex = (this.scanIndex + 1) % symbols.length;
+    this.requestSymbol(sym);
+  }
+
+  private scanIndex = 0;
+
   /** Ask PO to stream ticks for `displaySymbol` (used when API requests focus for signals). */
   requestSymbol(displaySymbol: string): void {
     if (!displaySymbol || !this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) return;
@@ -76,17 +90,22 @@ export class PocketWsClient {
     this.status(`changeSymbol → ${displaySymbol} (${poAsset})`);
   }
 
-  /** Bridge ingest: payout for all pairs; live price only for the active chart symbol. */
+  /** Bridge ingest: all pairs with payout; catalog price on every row; live tick on active only. */
   assetsForBridge(): BridgeAssetInput[] {
     const active = this.activeSymbol;
     return Array.from(this.assets.values())
       .filter((a) => /\sOTC$/i.test(a.symbol) && /^[A-Z]{3}\/[A-Z]{3}/i.test(a.symbol.replace(/\s+OTC$/i, '')))
       .map((a) => {
-        if (!active || a.symbol !== active) {
-          const { price: _p, ...rest } = a;
-          return rest;
+        const lkp = a.lastKnownPrice ?? a.price;
+        const base = {
+          ...a,
+          ...(lkp != null ? { lastKnownPrice: lkp, price: lkp } : {}),
+        };
+        if (active && a.symbol === active && a.price != null) {
+          return { ...base, price: a.price, live: true };
         }
-        return { ...a, live: true };
+        const { live: _l, ...rest } = base;
+        return rest;
       });
   }
 
@@ -190,7 +209,14 @@ export class PocketWsClient {
           for (const a of parsed) {
             const prev = this.assets.get(a.symbol);
             if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
-            this.assets.set(a.symbol, { ...prev, ...a, price: prev?.price ?? a.price });
+            const lkp = a.lastKnownPrice ?? a.price ?? prev?.lastKnownPrice ?? prev?.price;
+            this.assets.set(a.symbol, {
+              ...prev,
+              ...a,
+              lastKnownPrice: lkp ?? prev?.lastKnownPrice,
+              price: prev?.price ?? a.price ?? lkp,
+              timestamp: Date.now(),
+            });
           }
           this.status(`updateAssets: ${parsed.length} pairs`);
           continue;

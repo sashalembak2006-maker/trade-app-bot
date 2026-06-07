@@ -16,12 +16,19 @@ function log(msg: string, extra?: unknown) {
   else console.log(`[${ts}] [collector] ${msg}`);
 }
 
+let signalFocusUntil = 0;
+
 async function pollFocus(client: PocketWsClient): Promise<void> {
   try {
     const res = await fetch(`${API_URL}/api/bridge/focus`);
     if (!res.ok) return;
-    const data = (await res.json()) as { symbol?: string | null };
-    if (data.symbol) client.requestSymbol(data.symbol);
+    const data = (await res.json()) as { symbol?: string | null; expiresAt?: number };
+    if (data.symbol && data.expiresAt && Date.now() < data.expiresAt) {
+      signalFocusUntil = data.expiresAt;
+      client.requestSymbol(data.symbol);
+      return;
+    }
+    signalFocusUntil = 0;
   } catch {
     /* API may be starting */
   }
@@ -113,6 +120,11 @@ function main(): void {
   setInterval(() => {
     void pollFocus(client);
   }, 2000);
+
+  setInterval(() => {
+    if (Date.now() < signalFocusUntil) return;
+    client.scanNextOtc();
+  }, Number(process.env.OTC_STREAM_MS ?? 350));
 
   setInterval(() => {
     void sendHeartbeat(client);

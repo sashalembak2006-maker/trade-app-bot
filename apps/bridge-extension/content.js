@@ -554,7 +554,7 @@
           symbol: a.symbol,
           payout: a.payout,
           price: nextPrice,
-          lastKnownPrice: lkp ?? prev?.lastKnownPrice ?? lastKnownPrices.get(a.symbol) ?? null,
+          lastKnownPrice: lkp ?? prev?.lastKnownPrice ?? lastKnownPrices.get(a.symbol) ?? nextPrice ?? null,
           isOTC: a.isOTC ?? prev?.isOTC,
           category: a.category ?? prev?.category,
           timestamp: a.timestamp ?? Date.now(),
@@ -1515,7 +1515,7 @@
     return found;
   }
 
-  const CATEGORY_ROTATE_MS = 4000;
+  const CATEGORY_ROTATE_MS = 1500;
   let categoryTabIndex = 0;
 
   function rotateCategoryTab() {
@@ -1605,6 +1605,10 @@
       tryFocusSymbol(msg.symbol);
       return false;
     }
+    if (msg && msg.type === 'bridge-focus-state') {
+      otcStream.scanPausedUntil = msg.scanPaused && msg.expiresAt ? msg.expiresAt : 0;
+      return false;
+    }
     if (msg && msg.type === 'bridge-probe') {
       const list = scrapeList();
       const batch = buildBatch();
@@ -1618,4 +1622,99 @@
   });
 
   console.log('[PRIME Bridge] content script active on', location.host);
+
+  /** OTC Live Stream — rotates changeSymbol across all forex OTC pairs for real PO ticks. */
+  const OTC_STREAM_MS = 320;
+  const otcStream = {
+    scanPausedUntil: 0,
+    scanIndex: 0,
+    widget: null,
+  };
+
+  function displayToPoAsset(symbol) {
+    const isOtc = /\s+OTC$/i.test(symbol);
+    const base = symbol.replace(/\s+OTC$/i, '').trim();
+    if (/^[A-Z]{3}\/[A-Z]{3}$/i.test(base)) {
+      return base.replace('/', '').toUpperCase() + (isOtc ? '_otc' : '');
+    }
+    return base.replace(/\s+/g, '_').replace(/\//g, '') + (isOtc ? '_otc' : '');
+  }
+
+  function requestPoChangeSymbol(displaySymbol) {
+    const poAsset = displayToPoAsset(displaySymbol);
+    window.postMessage(
+      { source: 'prime-bridge-cmd', type: 'changeSymbol', poAsset, displaySymbol },
+      '*',
+    );
+    wsActiveSymbol = displaySymbol;
+  }
+
+  function countOtcWithPrice() {
+    let n = 0;
+    for (const [sym, e] of wsAssets) {
+      if (!isForexOtcSymbol(sym)) continue;
+      const p = e?.price ?? lastKnownPrices.get(sym);
+      if (p != null && isValidPrice(sym, p, e?.payout)) n++;
+    }
+    return n;
+  }
+
+  function ensureOtcStreamWidget() {
+    if (otcStream.widget || !isTradingTerminal()) return;
+    const el = document.createElement('div');
+    el.id = 'prime-otc-stream-widget';
+    el.style.cssText =
+      'position:fixed;bottom:12px;right:12px;z-index:999999;font:11px/1.4 system-ui,sans-serif;' +
+      'background:linear-gradient(145deg,rgba(12,12,12,.94),rgba(24,20,8,.92));' +
+      'border:1px solid rgba(212,175,55,.45);border-radius:12px;padding:10px 14px;min-width:168px;' +
+      'color:#e8d5a3;box-shadow:0 8px 32px rgba(0,0,0,.55);pointer-events:none;';
+    el.innerHTML =
+      '<div style="font-size:9px;letter-spacing:.2em;color:rgba(212,175,55,.75);margin-bottom:4px">PRIME OTC STREAM</div>' +
+      '<div id="prime-otc-stream-line1" style="font-weight:700;color:#fff">Запуск…</div>' +
+      '<div id="prime-otc-stream-line2" style="font-size:10px;color:rgba(200,200,200,.85);margin-top:2px">live scan</div>';
+    document.body.appendChild(el);
+    otcStream.widget = el;
+  }
+
+  function updateOtcStreamWidget(total, priced, currentSym) {
+    ensureOtcStreamWidget();
+    if (!otcStream.widget) return;
+    const l1 = otcStream.widget.querySelector('#prime-otc-stream-line1');
+    const l2 = otcStream.widget.querySelector('#prime-otc-stream-line2');
+    if (l1) l1.textContent = `${priced}/${total} OTC · live`;
+    if (l2) {
+      l2.textContent =
+        Date.now() < otcStream.scanPausedUntil
+          ? `сигнал: ${currentSym || '—'}`
+          : currentSym
+            ? `scan → ${currentSym.replace(/\s+OTC$/i, '')}`
+            : 'scan…';
+    }
+  }
+
+  function otcSymbolQueue() {
+    return Array.from(wsAssets.keys())
+      .filter(isForexOtcSymbol)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function tickOtcStream() {
+    if (!isTradingTerminal()) return;
+    if (Date.now() < otcStream.scanPausedUntil) {
+      updateOtcStreamWidget(otcSymbolQueue().length, countOtcWithPrice(), wsActiveSymbol);
+      return;
+    }
+    const queue = otcSymbolQueue();
+    if (queue.length < 2) {
+      updateOtcStreamWidget(queue.length, countOtcWithPrice(), null);
+      return;
+    }
+    const sym = queue[otcStream.scanIndex % queue.length];
+    otcStream.scanIndex = (otcStream.scanIndex + 1) % queue.length;
+    requestPoChangeSymbol(sym);
+    updateOtcStreamWidget(queue.length, countOtcWithPrice(), sym);
+  }
+
+  setInterval(tickOtcStream, OTC_STREAM_MS);
+  setTimeout(ensureOtcStreamWidget, 3000);
 })();

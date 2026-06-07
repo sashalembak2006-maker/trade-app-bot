@@ -676,12 +676,21 @@ async function pollFocus() {
     );
     if (!res.ok) return;
     const data = await res.json();
-    if (!data?.symbol) return;
     const tabs = await chrome.tabs.query({ url: PO_TAB_URLS });
+    const scanPaused = !!(data?.symbol && data?.expiresAt && Date.now() < data.expiresAt);
     for (const tab of tabs) {
-      if (tab.id != null) {
+      if (tab.id == null) continue;
+      if (data?.symbol && scanPaused) {
         chrome.tabs.sendMessage(tab.id, { type: 'bridge-focus', symbol: data.symbol }).catch(() => {});
       }
+      chrome.tabs
+        .sendMessage(tab.id, {
+          type: 'bridge-focus-state',
+          symbol: data?.symbol ?? null,
+          expiresAt: data?.expiresAt ?? 0,
+          scanPaused,
+        })
+        .catch(() => {});
     }
   } catch {
     /* ignore */

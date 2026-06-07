@@ -589,10 +589,33 @@
     return ws;
   }
 
+  let marketIoSocket = null;
+
+  function requestPoChangeSymbol(poAsset, displaySymbol) {
+    if (!poAsset) return false;
+    if (marketIoSocket?.emit) {
+      marketIoSocket.emit('changeSymbol', { asset: poAsset });
+      if (displaySymbol) {
+        activeAsset = displaySymbol;
+        post('active', { symbol: displaySymbol });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || ev.data?.source !== 'prime-bridge-cmd') return;
+    if (ev.data.type === 'changeSymbol') {
+      requestPoChangeSymbol(ev.data.poAsset, ev.data.displaySymbol ?? null);
+    }
+  });
+
   function bindSocketEvents(socket, uri) {
     if (!socket || socket.__primeBound) return;
     socket.__primeBound = true;
     if (/po\.market/i.test(uri || '')) {
+      marketIoSocket = socket;
       console.log('[PRIME Bridge] Socket.IO market:', uri);
     }
     const on = socket.on?.bind(socket);
