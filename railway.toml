@@ -1,11 +1,11 @@
-# ОДИН сервіс на Railway = API + Bot разом. Видали зайві сервіси (web, bot, collector).
+# PRIME TRADE BOT — один сервіс Railway (API + Bot)
 
 [build]
-builder = "NIXPACKS"
-buildCommand = "npm install && npm run build -w @trade-app/shared && npm run build -w @trade-app/api && npm run build -w @trade-app/bot && npm run db:generate -w @trade-app/api"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.railway"
 
 [deploy]
-startCommand = "npm run start:railway"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
+startCommand = "npm run start:railway"
