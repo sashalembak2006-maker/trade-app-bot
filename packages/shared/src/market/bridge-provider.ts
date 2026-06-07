@@ -20,6 +20,7 @@ import {
 import { isPlausibleMarketPrice } from './price-validation.js';
 import { SyntheticPriceEngine } from './synthetic-price.js';
 import { resolveAssetFlags } from './asset-flags.js';
+import { normalizeAssetCategory, resolveAssetCategory } from './asset-category.js';
 
 let syntheticFallbackEnabled = true;
 
@@ -58,13 +59,6 @@ function roundChangePct(raw: number): number {
   if (!Number.isFinite(raw)) return 0;
   const rounded = Math.round(raw * 100) / 100;
   return Math.abs(rounded) < 0.01 ? 0 : rounded;
-}
-
-function normalizeCategory(category: string | undefined, isOTC: boolean): AssetCategory {
-  if (category && ['forex', 'forex_otc', 'crypto', 'stocks', 'commodities', 'indices'].includes(category)) {
-    return category as AssetCategory;
-  }
-  return isOTC ? 'forex_otc' : 'forex';
 }
 
 /**
@@ -115,7 +109,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       priceUpdatedAt: now,
       payout: prev?.payout ?? 92,
       change: prev?.change ?? 0,
-      category: prev?.category ?? (/otc/i.test(symbol) ? 'forex_otc' : 'forex'),
+      category: prev?.category ?? resolveAssetCategory(symbol),
       isOTC: prev?.isOTC ?? /otc/i.test(symbol),
       updatedAt: now,
     };
@@ -258,7 +252,7 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
         priceUpdatedAt,
         payout: a.payout,
         change,
-        category: normalizeCategory(a.category, isOTC),
+        category: normalizeAssetCategory(a.category, a.symbol, isOTC),
         isOTC,
         updatedAt: a.timestamp ?? now,
       };

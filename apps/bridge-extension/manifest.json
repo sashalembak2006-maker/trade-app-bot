@@ -7,6 +7,7 @@
   "host_permissions": [
     "http://localhost:3001/*",
     "http://127.0.0.1:3001/*",
+    "https://*.up.railway.app/*",
     "https://pocketoption.com/*",
     "https://*.pocketoption.com/*",
     "https://po.trade/*",

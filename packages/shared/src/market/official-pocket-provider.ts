@@ -1,5 +1,6 @@
 import type { Asset, PriceUpdate } from '../types/index.js';
 import { resolveAssetFlags } from './asset-flags.js';
+import { resolveAssetCategory } from './asset-category.js';
 import { DataSourceNotConfiguredError } from './provider.js';
 
 /** Quote from an official / approved Pocket Option data feed. */
@@ -75,7 +76,7 @@ export function pocketQuotesToAssets(quotes: PocketQuote[]): Asset[] {
     id: q.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     symbol: q.symbol,
     name: q.symbol.replace(/ otc$/i, ''),
-    category: q.isOTC ? 'forex_otc' : 'forex',
+    category: resolveAssetCategory(q.symbol, q.isOTC),
     isOTC: q.isOTC,
     price: q.price,
     payout: q.payout,
