@@ -88,3 +88,37 @@ Write-Host "1. Open api.env and replace BOT_TOKEN=PASTE_FROM_apps_bot_env"
 Write-Host "2. Copy all vars to Railway API service"
 Write-Host "3. Set API_URL in bot.env after Railway gives API domain"
 Write-Host "4. Copy bot.env to Railway Bot service"
+Write-Host ""
+
+# Один файл для Railway (API + Bot в одному сервісі)
+$allEnv = @"
+# === Встав у Railway RAW Editor (ОДИН сервіс) ===
+NODE_ENV=production
+WEBAPP_URL=https://trade-app-bot.vercel.app
+CORS_ORIGIN=https://trade-app-bot.vercel.app
+DATABASE_URL=file:./prod.db
+MARKET_DATA_MODE=platform
+PLATFORM_SYNTHETIC_FALLBACK=true
+BRIDGE_SECRET=$bridge
+COLLECTOR_SECRET=$collector
+INTERNAL_API_SECRET=$internal
+ALLOW_RUNTIME_MODE_SWITCH=false
+LOG_LEVEL=info
+MIN_DEPOSIT_AMOUNT=100
+ADMIN_EMAIL=admin@primetrade.bot
+ADMIN_PASSWORD=$adminPass
+TELEGRAM_ADMIN_IDS=7798035089
+ADMIN_TELEGRAM_IDS=7798035089
+BOT_TOKEN=PASTE_FROM_apps_bot_env
+BOT_DISPLAY_NAME=PRIME TRADE BOT
+POCKET_REFERRAL_URL=https://u2.shortink.io/register?utm_campaign=52397&utm_source=affiliate&utm_medium=sr&a=5ZcGv2M6DXidGG&ac=mercedescls&code=TUX812
+DEPOSIT_URL=https://pocketoption.com/uk/cabinet/deposit-step-1
+SUPPORT_URL=https://t.me/manager_primetrade
+REVIEWS_URL=https://t.me/c/2014902155/544
+WELCOME_IMAGE_URL=https://trade-app-bot.vercel.app/welcome-bot.png
+REQUIRED_CHANNEL_ID=
+REQUIRED_CHANNEL_URL=
+"@
+
+$allEnv | Set-Content (Join-Path $localDir 'railway-all.env') -Encoding UTF8
+Write-Host "  deploy/local/railway-all.env  (ONE service — use this)"

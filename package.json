@@ -15,6 +15,7 @@
     "typecheck": "npm run build -w @trade-app/shared && npm run typecheck -w @trade-app/api && npm run typecheck -w @trade-app/bot && npm run typecheck -w @trade-app/collector && npm run typecheck -w @trade-app/web",
     "lint": "npm run typecheck",
     "start:prod": "pm2 start ecosystem.config.cjs && pm2 save",
+    "start:railway": "sh scripts/start-railway.sh",
     "stop:prod": "pm2 delete prime-api prime-bot prime-web prime-collector || true",
     "verify:prod": "bash scripts/verify-production.sh",
     "db:push": "npm run db:push -w @trade-app/api",

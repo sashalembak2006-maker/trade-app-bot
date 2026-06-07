@@ -1,13 +1,11 @@
-# Railway — сервіс API (створіть окремий сервіс у проєкті Railway)
-# Dashboard → Service → Settings → Dockerfile Path: Dockerfile
-# Variables → RAILWAY_DOCKERFILE_TARGET = api
+# ОДИН сервіс на Railway = API + Bot разом. Видали зайві сервіси (web, bot, collector).
 
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "NIXPACKS"
+buildCommand = "npm ci && npm run build -w @trade-app/shared && npm run build -w @trade-app/api && npm run build -w @trade-app/bot && npm run db:generate -w @trade-app/api"
 
 [deploy]
+startCommand = "npm run start:railway"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
