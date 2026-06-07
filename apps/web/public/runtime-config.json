@@ -1,4 +1,4 @@
 {
-  "apiUrl": "https://realtor-subscription-release-iowa.trycloudflare.com",
-  "wsUrl": "wss://realtor-subscription-release-iowa.trycloudflare.com/ws"
+  "apiUrl": "https://prime-trade-production.up.railway.app",
+  "wsUrl": "wss://prime-trade-production.up.railway.app/ws"
 }
