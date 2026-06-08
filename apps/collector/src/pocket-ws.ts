@@ -114,7 +114,18 @@ export class PocketWsClient {
     this.status(`Connecting to ${this.cfg.wsUrl}…`);
 
     try {
-      this.ws = new WebSocket(this.cfg.wsUrl);
+      // PO sits behind Cloudflare — a bare Node WS (no Origin/User-Agent) is
+      // rejected and the socket closes immediately. Send browser-like headers.
+      this.ws = new WebSocket(this.cfg.wsUrl, {
+        headers: {
+          Origin: 'https://pocketoption.com',
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
     } catch (e) {
       this.scheduleReconnect(e instanceof Error ? e.message : 'connect failed');
       return;
@@ -127,9 +138,15 @@ export class PocketWsClient {
 
     this.ws.on('message', (raw) => this.handleMessage(raw));
 
-    this.ws.on('close', () => {
+    this.ws.on('close', (code: number, reason: Buffer) => {
       this.connected = false;
-      this.scheduleReconnect('socket closed');
+      const why = reason && reason.length ? ` ${reason.toString('utf8').slice(0, 80)}` : '';
+      this.scheduleReconnect(`socket closed (code ${code}${why})`);
+    });
+
+    this.ws.on('unexpected-response', (_req, res) => {
+      this.connected = false;
+      this.scheduleReconnect(`HTTP ${res.statusCode} (handshake rejected)`);
     });
 
     this.ws.on('error', (err) => {
