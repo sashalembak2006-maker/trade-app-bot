@@ -14,13 +14,13 @@ import {
   settleSignal,
   timeframeToMs,
 } from '../../utils/signal-settlement';
+import { generateLocalSignal, recordSignalBackground, resolvePoEntryPrice } from '../../services/local-signal';
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 600;
-const COVERAGE_ANALYSIS_MS = 500;
-const SIGNAL_REQUEST_TIMEOUT_MS = 18_000;
-const LOADING_WATCHDOG_MS = 22_000;
+const ANALYSIS_MIN_MS = 380;
+const COVERAGE_ANALYSIS_MS = 320;
+const LOADING_WATCHDOG_MS = 12_000;
 
 /** Cancel stale in-flight signal requests when user retries. */
 let activeSignalAbort: AbortController | null = null;
@@ -296,7 +296,7 @@ export function SignalModal() {
       step++;
       setLoadingStep(step);
       if (step >= steps.length) clearInterval(interval);
-    }, 800);
+    }, 450);
     const watchdog = setTimeout(() => {
       if (useAppStore.getState().signalPhase !== 'loading') return;
       logger.error('Signal', 'loading watchdog fired');
@@ -373,50 +373,40 @@ export function SignalModal() {
     setSignalPhase('loading');
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
-    logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
+    logger.info('Signal', 'local generate', selectedAsset.symbol, selectedTimeframe);
 
-    await api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
-
-    const bridgePrice =
-      selectedAsset.price ?? selectedAsset.lastKnownPrice ?? null;
-
-    const signalPromise = api.generateSignal(
-      {
-        assetId: selectedAsset.id,
-        symbol: selectedAsset.symbol,
-        timeframe: selectedTimeframe,
-        isOTC: selectedAsset.isOTC,
-        ...(bridgePrice != null ? { bridgePrice } : {}),
-      },
-      { signal: abort.signal, timeoutMs: SIGNAL_REQUEST_TIMEOUT_MS },
-    );
+    void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
 
     try {
-      const [result] = await Promise.all([signalPromise, runAnalysisAnimation()]);
+      const [entryPrice] = await Promise.all([
+        resolvePoEntryPrice(selectedAsset.symbol, selectedAsset),
+        runAnalysisAnimation(),
+      ]);
       if (abort.signal.aborted) return;
+
+      if (entryPrice == null || entryPrice <= 0) {
+        setSignalError(t.openAssetOnPlatform);
+        setSignalPhase('idle');
+        hapticFeedback('heavy');
+        return;
+      }
+
+      const result = generateLocalSignal({
+        asset: selectedAsset,
+        timeframe: selectedTimeframe,
+        entryPrice,
+      });
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
       beginSignalResult({ ...result, expiresAt });
+      recordSignalBackground({ ...result, expiresAt });
       hapticSuccess();
-      logger.info('Signal', 'received', result.direction, `${result.confidence}%`);
+      logger.info('Signal', 'received', result.direction, `${result.confidence}%`, entryPrice);
     } catch (e) {
       if (abort.signal.aborted) return;
-      const err = e as ApiError;
-      logger.error('Signal', 'generation failed', err.code, err.message);
-      const msg =
-        err.code === 'NO_PRICE' || err.status === 422
-          ? t.openAssetOnPlatform
-          : err.code === 'DATA_SOURCE_NOT_CONFIGURED' || err.status === 503
-            ? (marketStatus?.mode === 'live' ? t.dataTemporarilyUnavailable : t.dataSourceNotConnected)
-            : err.code === 'TIMEOUT'
-              ? t.errorTimeout
-              : err.code === 'NETWORK'
-                ? t.errorNetwork
-                : err.code === 'NO_ACCESS'
-                  ? t.noSignalAccess
-                  : err.message || t.errorSignal;
-      setSignalError(msg);
+      logger.error('Signal', 'local generation failed', e);
+      setSignalError(t.errorSignal);
       setSignalPhase('idle');
       hapticFeedback('heavy');
     } finally {
@@ -440,30 +430,35 @@ export function SignalModal() {
 
     try {
       void api.requestFocus(selectedAsset.symbol, 60_000).catch(() => {});
-      const [, coverage] = await Promise.all([
+      const [entryPrice] = await Promise.all([
+        resolvePoEntryPrice(selectedAsset.symbol, selectedAsset),
         runAnalysisAnimation(COVERAGE_ANALYSIS_MS),
-        api.getCoveragePrice(selectedAsset.symbol),
       ]);
 
-      const entryPrice = coverage.entryPrice;
+      if (entryPrice == null || entryPrice <= 0) {
+        setSignalError(t.openAssetOnPlatform);
+        setSignalPhase('settled');
+        return;
+      }
+
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
-      beginSignalResult({
+      const nextResult = {
         ...signalResult,
         id: `sig_${Date.now()}_cov${overlayNumberFromMultiplier(next)}`,
         entryPrice,
         expiresAt,
         createdAt: new Date().toISOString(),
-      });
+      };
+      beginSignalResult(nextResult);
+      recordSignalBackground(nextResult);
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
       hapticSuccess();
       logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`, entryPrice);
     } catch (e) {
       const err = e as ApiError;
       logger.error('Signal', 'coverage failed', err.code, err.message);
-      setSignalError(
-        err.code === 'NO_PRICE' || err.status === 422 ? t.openAssetOnPlatform : t.errorSignal,
-      );
+      setSignalError(t.errorSignal);
       setSignalPhase('settled');
     }
   };

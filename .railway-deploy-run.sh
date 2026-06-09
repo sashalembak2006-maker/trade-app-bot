@@ -71,7 +71,7 @@ fi
 echo ""
 echo "SUCCESS: білд запущено"
 echo ""
-echo "Чекаю version 1.5.10-instant-signal..."
+echo "Чекаю version 1.5.11-local-signal..."
 for i in $(seq 1 20); do
   sleep 20
   STATUS=$(curl -sf --max-time 8 "https://prime-trade-production.up.railway.app/api/collector/status" 2>/dev/null || echo "")
@@ -79,7 +79,7 @@ for i in $(seq 1 20); do
     VER=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
     ASSETS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
     echo "  [$i/20] version=$VER assetCount=$ASSETS"
-    if [ "$VER" = "1.5.10-instant-signal" ]; then
+    if [ "$VER" = "1.5.11-local-signal" ]; then
       echo ""
       echo "✓ НОВИЙ КОД НА ПРОДІ!"
       exit 0

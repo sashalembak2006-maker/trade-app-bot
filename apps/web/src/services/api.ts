@@ -188,6 +188,12 @@ export const api = {
       '/api/signals/coverage',
       { method: 'POST', body: JSON.stringify({ symbol }), timeoutMs: 12_000 },
     ),
+  recordSignal: (body: Record<string, unknown>) =>
+    fetchJson<{ ok: boolean }>('/api/signals/record', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: 8000,
+    }),
   calculate: (body: Record<string, unknown>) =>
     fetchJson<CalculatorResult>('/api/calculator', { method: 'POST', body: JSON.stringify(body) }),
   getNews: () => fetchJson<NewsItem[]>('/api/news', { timeoutMs: 6000 }),

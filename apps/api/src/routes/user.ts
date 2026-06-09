@@ -485,6 +485,42 @@ router.post('/signals/coverage', async (req, res) => {
   }
 });
 
+/** Background history save from client-side signal (instant UI). */
+router.post('/signals/record', async (req, res) => {
+  const user = await ensureUser(req, res);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!hasSignalAccess(user)) return res.status(403).json({ error: 'Access denied', code: 'NO_ACCESS' });
+
+  const id = String(req.body?.id ?? '').trim();
+  const symbol = String(req.body?.symbol ?? '').trim();
+  const direction = String(req.body?.direction ?? '').trim();
+  const timeframe = String(req.body?.timeframe ?? '').trim();
+  const entryPrice = Number(req.body?.entryPrice);
+  const expiresAt = String(req.body?.expiresAt ?? '').trim();
+
+  if (!id || !symbol || !direction || !timeframe || !expiresAt || !Number.isFinite(entryPrice)) {
+    return res.status(400).json({ error: 'Invalid signal payload' });
+  }
+
+  res.json({ ok: true });
+  void prisma.signalHistory
+    .create({
+      data: {
+        id,
+        userId: user.id,
+        assetSymbol: symbol,
+        direction,
+        timeframe,
+        entryPrice,
+        confidence: Number(req.body?.confidence) || 0,
+        payout: Number(req.body?.payout) || 0,
+        market: String(req.body?.market ?? 'OTC'),
+        expiresAt: new Date(expiresAt),
+      },
+    })
+    .catch((err) => log.error('Signal record failed', err));
+});
+
 router.get('/signals/history', async (req, res) => {
   const user = await ensureUser(req, res);
   if (!user || !hasAppAccess(user)) return res.status(403).json({ error: 'Access denied' });
