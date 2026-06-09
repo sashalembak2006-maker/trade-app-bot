@@ -12,6 +12,7 @@
   "dependencies": {
     "@trade-app/shared": "*",
     "dotenv": "^16.5.0",
+    "socket.io-client": "^4.8.1",
     "ws": "^8.18.2"
   },
   "devDependencies": {
