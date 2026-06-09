@@ -47,8 +47,12 @@ export class PocketWsClient {
   private activeSymbol: string | null = null;
   private lastFocusSymbol: string | null = null;
   private pendingStream = false;
-  private pendingBinary: { attachmentCount: number; payload: unknown[]; received: Buffer[] } | null =
-    null;
+  private binaryQueue: Array<{
+    attachmentCount: number;
+    payload: unknown[];
+    received: Buffer[];
+  }> = [];
+  private orphanBinaries: Array<{ buf: Buffer; at: number }> = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private stopped = false;
@@ -227,7 +231,16 @@ export class PocketWsClient {
   }
 
   private applyUpdateAssets(data: unknown): void {
-    const parsed = parseUpdateAssetsPayload(data);
+    const rows = Array.isArray(data)
+      ? data
+      : data && typeof data === 'object' && Array.isArray((data as { assets?: unknown[] }).assets)
+        ? (data as { assets: unknown[] }).assets
+        : null;
+    if (!rows) {
+      this.status('updateAssets payload not array — waiting for binary');
+      return;
+    }
+    const parsed = parseUpdateAssetsPayload(rows);
     const now = Date.now();
     for (const a of parsed) {
       const prev = this.assets.get(a.symbol);
@@ -248,7 +261,11 @@ export class PocketWsClient {
         timestamp: now,
       });
     }
-    if (parsed.length) this.status(`updateAssets: ${parsed.length} pairs`);
+    if (parsed.length) {
+      this.status(`updateAssets: ${parsed.length} pairs (${rows.length} rows)`);
+    } else if (rows.length) {
+      this.status(`updateAssets: 0 parsed from ${rows.length} rows`);
+    }
   }
 
   private applyUpdateStream(data: unknown): void {
@@ -274,6 +291,7 @@ export class PocketWsClient {
     if (ev === 'successauth' || ev === 'success') {
       this.connected = true;
       this.status('Authenticated — waiting for updateAssets');
+      setTimeout(() => this.nudgeAfterAuth(), 400);
       return;
     }
     if (ev.includes('notauthorized') || ev.includes('authfail') || ev === 'disconnect') {
@@ -295,20 +313,77 @@ export class PocketWsClient {
     }
   }
 
+  private nudgeAfterAuth(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) return;
+    this.ws.send('42["changeSymbol",{"asset":"EURUSD_otc"}]');
+    this.activeSymbol = 'EUR/USD OTC';
+    this.status('Authenticated — nudged PO for assets');
+  }
+
+  private pruneOrphans(): void {
+    const now = Date.now();
+    this.orphanBinaries = this.orphanBinaries.filter((o) => now - o.at < 4000);
+  }
+
+  private takeOrphanBinary(): Buffer | null {
+    this.pruneOrphans();
+    if (!this.orphanBinaries.length) return null;
+    return this.orphanBinaries.shift()!.buf;
+  }
+
+  private queueBinaryAssembly(entry: {
+    attachmentCount: number;
+    payload: unknown[];
+    received: Buffer[];
+  }): void {
+    while (entry.received.length < entry.attachmentCount) {
+      const orphan = this.takeOrphanBinary();
+      if (!orphan) break;
+      entry.received.push(orphan);
+    }
+    this.binaryQueue.push(entry);
+    this.drainBinaryQueue();
+  }
+
+  private pushOrphanBinary(buf: Buffer): void {
+    this.pruneOrphans();
+    this.orphanBinaries.push({ buf, at: Date.now() });
+    while (this.orphanBinaries.length > 16) this.orphanBinaries.shift();
+    if (this.binaryQueue.length) {
+      const head = this.binaryQueue[0]!;
+      while (head.received.length < head.attachmentCount) {
+        const orphan = this.takeOrphanBinary();
+        if (!orphan) break;
+        head.received.push(orphan);
+      }
+      this.drainBinaryQueue();
+    }
+  }
+
+  private drainBinaryQueue(): void {
+    while (this.binaryQueue.length) {
+      const head = this.binaryQueue[0]!;
+      if (head.received.length < head.attachmentCount) break;
+      this.binaryQueue.shift();
+      const done = finishBinaryAssembly(head.payload, head.received);
+      if (done) this.dispatchEvent(done.event, done.data);
+    }
+  }
+
   private tryFinishBinary(): void {
-    if (!this.pendingBinary) return;
-    if (this.pendingBinary.received.length < this.pendingBinary.attachmentCount) return;
-    const done = finishBinaryAssembly(this.pendingBinary.payload, this.pendingBinary.received);
-    this.pendingBinary = null;
-    if (done) this.dispatchEvent(done.event, done.data);
+    this.drainBinaryQueue();
   }
 
   private handleBinaryChunk(buf: Buffer): void {
-    if (this.pendingBinary) {
-      this.pendingBinary.received.push(buf);
-      this.tryFinishBinary();
-      return;
+    if (this.binaryQueue.length) {
+      const head = this.binaryQueue[0]!;
+      if (head.received.length < head.attachmentCount) {
+        head.received.push(buf);
+        this.drainBinaryQueue();
+        return;
+      }
     }
+
     if (this.pendingStream) {
       this.pendingStream = false;
       try {
@@ -322,11 +397,8 @@ export class PocketWsClient {
       }
       return;
     }
-    try {
-      this.applyUpdateStream(decodeMsgPack(buf));
-    } catch {
-      /* orphan binary */
-    }
+
+    this.pushOrphanBinary(buf);
   }
 
   private looksLikeSocketIoText(buf: Buffer): boolean {
@@ -361,8 +433,7 @@ export class PocketWsClient {
 
     const frame = parseSocketIoTextFrame(text);
     if (frame?.pendingBinary) {
-      this.pendingBinary = frame.pendingBinary;
-      this.tryFinishBinary();
+      this.queueBinaryAssembly(frame.pendingBinary);
       return;
     }
     if (frame) {

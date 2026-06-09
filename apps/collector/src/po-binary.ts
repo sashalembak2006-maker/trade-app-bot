@@ -58,6 +58,14 @@ export function decodeMsgPack(raw: Buffer | ArrayBuffer): unknown {
 }
 
 function decodeBinaryAttachment(buf: Buffer): unknown {
+  const first = buf[0];
+  if (first === 0x5b || first === 0x7b) {
+    try {
+      return JSON.parse(buf.toString('utf8'));
+    } catch {
+      /* fall through */
+    }
+  }
   try {
     return decodeMsgPack(buf);
   } catch {
