@@ -1,5 +1,5 @@
 import type { BridgeAssetInput } from '@trade-app/shared';
-import { MarketTickStore } from '@trade-app/shared';
+import { MarketTickStore, isPlausibleMarketPrice } from '@trade-app/shared';
 
 let store: MarketTickStore | null = null;
 
@@ -25,6 +25,7 @@ export function recordBridgeTicks(
   for (const a of assets) {
     if (!a.symbol) continue;
     if (a.live === true && typeof a.price === 'number') {
+      if (!isPlausibleMarketPrice(a.price, a.symbol)) continue;
       tickStore.record(a.symbol, a.price, a.timestamp ?? now, { payout: a.payout, live: true });
       continue;
     }
@@ -34,7 +35,7 @@ export function recordBridgeTicks(
         : typeof a.lastKnownPrice === 'number'
           ? a.lastKnownPrice
           : null;
-    if (catalog != null) {
+    if (catalog != null && isPlausibleMarketPrice(catalog, a.symbol)) {
       tickStore.setCatalogPrice(a.symbol, catalog, a.timestamp ?? now, a.payout);
     } else if (typeof a.payout === 'number') {
       const prev = tickStore.query(a.symbol, 0);

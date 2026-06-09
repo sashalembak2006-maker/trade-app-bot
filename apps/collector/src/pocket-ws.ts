@@ -2,9 +2,10 @@ import WebSocket from 'ws';
 import {
   displaySymbolToPoAsset,
   parseUpdateAssetsPayload,
-  parseUpdateStreamTick,
+  parseUpdateStreamTicks,
   poSymbolToDisplay,
   pocketForexOtcSymbolRegistry,
+  isPlausibleMarketPrice,
   type BridgeAssetInput,
 } from '@trade-app/shared';
 import {
@@ -281,33 +282,36 @@ export class PocketWsClient {
   }
 
   private applyUpdateStream(data: unknown): void {
-    const tick = parseUpdateStreamTick(data);
-    if (tick?.price == null) return;
-    const sym = tick.symbol ?? this.activeSymbol;
-    if (!sym) return;
-    this.activeSymbol = sym;
-    const prev = this.assets.get(sym);
-    if (prev) {
-      this.assets.set(sym, {
-        ...prev,
-        price: tick.price,
-        lastKnownPrice: tick.price,
-        timestamp: Date.now(),
-        live: true,
-      });
-    } else {
-      this.assets.set(sym, {
-        symbol: sym,
-        poAsset: displaySymbolToPoAsset(sym),
-        payout: 85,
-        isOTC: /\sOTC$/i.test(sym),
-        price: tick.price,
-        lastKnownPrice: tick.price,
-        timestamp: Date.now(),
-        live: true,
-      });
+    const ticks = parseUpdateStreamTicks(data, this.activeSymbol ?? undefined);
+    if (!ticks.length) return;
+    for (const tick of ticks) {
+      if (tick.price == null || !isPlausibleMarketPrice(tick.price, tick.symbol)) continue;
+      const sym = tick.symbol ?? this.activeSymbol;
+      if (!sym) continue;
+      this.activeSymbol = sym;
+      const prev = this.assets.get(sym);
+      if (prev) {
+        this.assets.set(sym, {
+          ...prev,
+          price: tick.price,
+          lastKnownPrice: tick.price,
+          timestamp: Date.now(),
+          live: true,
+        });
+      } else {
+        this.assets.set(sym, {
+          symbol: sym,
+          poAsset: displaySymbolToPoAsset(sym),
+          payout: 0,
+          isOTC: /\sOTC$/i.test(sym),
+          price: tick.price,
+          lastKnownPrice: tick.price,
+          timestamp: Date.now(),
+          live: true,
+        });
+      }
+      this.status(`updateStream → ${sym} ${tick.price}`);
     }
-    this.status(`updateStream → ${sym} ${tick.price}`);
   }
 
   private dispatchEvent(event: string, data: unknown): void {

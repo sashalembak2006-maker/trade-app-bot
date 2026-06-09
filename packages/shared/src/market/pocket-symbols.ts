@@ -70,17 +70,53 @@ export function parseUpdateAssetsPayload(data: unknown): BridgeAssetInput[] {
   return out;
 }
 
-export function parseUpdateStreamPrice(data: unknown): number | null {
-  const tick = parseUpdateStreamTick(data);
-  return tick?.price ?? null;
+/** Unix seconds/ms from PO updateStream — never a forex price. */
+function isLikelyUnixTimestamp(n: number): boolean {
+  return Number.isFinite(n) && n >= 1e8 && n <= 2.2e12;
 }
 
-/** Parse Pocket `updateStream` payload — price tick, optional symbol. */
-export function parseUpdateStreamTick(data: unknown): { symbol?: string; price: number } | null {
-  if (data == null) return null;
+function tickFromStreamTuple(
+  tuple: unknown[],
+  fallbackSymbol?: string,
+): { symbol?: string; price: number } | null {
+  if (!Array.isArray(tuple) || tuple.length < 2) return null;
 
-  if (typeof data === 'number' && Number.isFinite(data)) {
-    return { price: data };
+  // PO binary JSON: ["EURJPY_otc", 1780789097.061, 189.811]
+  if (typeof tuple[0] === 'string' && tuple.length >= 3 && typeof tuple[2] === 'number') {
+    const price = tuple[2];
+    if (!Number.isFinite(price) || isLikelyUnixTimestamp(price)) return null;
+    const symbol = poSymbolToDisplay(tuple[0]) || fallbackSymbol;
+    return { ...(symbol ? { symbol } : {}), price };
+  }
+
+  if (typeof tuple[0] === 'string' && typeof tuple[1] === 'number' && !isLikelyUnixTimestamp(tuple[1])) {
+    const symbol = poSymbolToDisplay(tuple[0]) || fallbackSymbol;
+    return { ...(symbol ? { symbol } : {}), price: tuple[1] };
+  }
+
+  if (typeof tuple[0] === 'number' && typeof tuple[1] === 'number') {
+    if (isLikelyUnixTimestamp(tuple[0]) && !isLikelyUnixTimestamp(tuple[1])) {
+      return { price: tuple[1], ...(fallbackSymbol ? { symbol: fallbackSymbol } : {}) };
+    }
+    if (!isLikelyUnixTimestamp(tuple[1])) {
+      return { price: tuple[1], ...(fallbackSymbol ? { symbol: fallbackSymbol } : {}) };
+    }
+  }
+
+  return null;
+}
+
+/** Parse one or many PO updateStream ticks from decoded binary JSON. */
+export function parseUpdateStreamTicks(
+  data: unknown,
+  fallbackSymbol?: string,
+): Array<{ symbol?: string; price: number }> {
+  const out: Array<{ symbol?: string; price: number }> = [];
+  if (data == null) return out;
+
+  if (typeof data === 'number' && Number.isFinite(data) && !isLikelyUnixTimestamp(data)) {
+    out.push({ price: data, ...(fallbackSymbol ? { symbol: fallbackSymbol } : {}) });
+    return out;
   }
 
   if (typeof data === 'object' && !Array.isArray(data)) {
@@ -93,32 +129,53 @@ export function parseUpdateStreamTick(data: unknown): { symbol?: string; price: 
           : typeof o.close === 'number'
             ? o.close
             : null;
-    if (price == null || !Number.isFinite(price)) return null;
-    const sym = o.asset ?? o.symbol ?? o.name;
-    return {
-      price,
-      ...(typeof sym === 'string' ? { symbol: poSymbolToDisplay(sym) } : {}),
-    };
-  }
-
-  if (!Array.isArray(data)) return null;
-
-  if (Array.isArray(data[0])) {
-    const row = data[0];
-    if (row.length >= 2) {
-      const sym = typeof row[0] === 'string' ? poSymbolToDisplay(row[0]) : undefined;
-      const price = typeof row[1] === 'number' ? row[1] : typeof row[2] === 'number' ? row[2] : null;
-      if (price != null && Number.isFinite(price)) return { price, ...(sym ? { symbol: sym } : {}) };
+    if (price != null && Number.isFinite(price) && !isLikelyUnixTimestamp(price)) {
+      const sym = o.asset ?? o.symbol ?? o.name;
+      out.push({
+        price,
+        ...(typeof sym === 'string' ? { symbol: poSymbolToDisplay(sym) } : fallbackSymbol ? { symbol: fallbackSymbol } : {}),
+      });
     }
+    return out;
   }
+
+  if (!Array.isArray(data)) return out;
+
+  if (data.length >= 3 && typeof data[0] === 'string') {
+    const single = tickFromStreamTuple(data, fallbackSymbol);
+    if (single) out.push(single);
+    return out;
+  }
+
+  for (const item of data) {
+    if (!Array.isArray(item)) continue;
+    const tick = tickFromStreamTuple(item, fallbackSymbol);
+    if (tick) out.push(tick);
+  }
+  if (out.length) return out;
 
   if (data.length >= 2) {
-    if (typeof data[0] === 'string' && typeof data[1] === 'number') {
-      return { symbol: poSymbolToDisplay(data[0]), price: data[1] };
+    if (typeof data[0] === 'string' && typeof data[1] === 'number' && !isLikelyUnixTimestamp(data[1])) {
+      out.push({ symbol: poSymbolToDisplay(data[0]), price: data[1] });
+      return out;
     }
-    if (typeof data[1] === 'number') return { price: data[1] };
-    if (typeof data[0] === 'number' && typeof data[1] === 'number') return { price: data[1] };
+    if (typeof data[1] === 'number' && !isLikelyUnixTimestamp(data[1])) {
+      out.push({ price: data[1], ...(fallbackSymbol ? { symbol: fallbackSymbol } : {}) });
+    }
   }
 
-  return null;
+  return out;
+}
+
+export function parseUpdateStreamPrice(data: unknown): number | null {
+  const tick = parseUpdateStreamTick(data);
+  return tick?.price ?? null;
+}
+
+/** Parse Pocket `updateStream` payload — price tick, optional symbol. */
+export function parseUpdateStreamTick(
+  data: unknown,
+  fallbackSymbol?: string,
+): { symbol?: string; price: number } | null {
+  return parseUpdateStreamTicks(data, fallbackSymbol)[0] ?? null;
 }

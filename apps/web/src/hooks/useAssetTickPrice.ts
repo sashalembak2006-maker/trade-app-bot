@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
+import { isPlausibleAssetPrice } from '../utils/price-validation';
 
 /** Poll /api/ticks — only show prices confirmed from Pocket Option (live stream or PO catalog). */
 export function useAssetTickPrice(
@@ -26,7 +27,7 @@ export function useAssetTickPrice(
         const data = await api.getTicks(symbol, sinceRef.current);
         if (cancelled) return;
         if (data.payout != null) setPayout(data.payout);
-        if (data.live && data.latest != null) {
+        if (data.live && data.latest != null && isPlausibleAssetPrice(data.latest, symbol)) {
           setLive(true);
           setPrice(data.latest);
           if (data.ticks.length > 0) {
@@ -34,10 +35,19 @@ export function useAssetTickPrice(
           }
           return;
         }
-        if (data.catalog != null) {
+        if (data.catalog != null && isPlausibleAssetPrice(data.catalog, symbol)) {
           setLive(false);
           setPrice(data.catalog);
           return;
+        }
+        if (data.ticks.length > 0) {
+          const last = data.ticks[data.ticks.length - 1]!;
+          if (isPlausibleAssetPrice(last.price, symbol)) {
+            sinceRef.current = last.ts;
+            setLive(Boolean(data.live));
+            setPrice(last.price);
+            return;
+          }
         }
         setLive(false);
         setPrice(null);
