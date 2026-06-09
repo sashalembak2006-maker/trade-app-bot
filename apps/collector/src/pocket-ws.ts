@@ -4,6 +4,7 @@ import {
   parseUpdateAssetsPayload,
   parseUpdateStreamTick,
   poSymbolToDisplay,
+  pocketForexOtcSymbolRegistry,
   type BridgeAssetInput,
 } from '@trade-app/shared';
 import {
@@ -61,8 +62,13 @@ export class PocketWsClient {
   private urlIndex = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private gotEngineOpen = false;
+  private readonly registrySymbols: string[];
 
-  constructor(private readonly cfg: PocketWsConfig) {}
+  constructor(private readonly cfg: PocketWsConfig) {
+    this.registrySymbols = pocketForexOtcSymbolRegistry()
+      .map((a) => a.symbol)
+      .sort();
+  }
 
   private wsUrls(): string[] {
     const primary = this.cfg.wsUrl.trim();
@@ -106,16 +112,22 @@ export class PocketWsClient {
     };
   }
 
-  /** Rotate through OTC pairs when no user signal focus — real updateStream ticks. */
+  /** Rotate through all forex OTC pairs — real PO updateStream tick per pair. */
   scanNextOtc(): void {
-    const symbols = Array.from(this.assets.keys())
+    const symbols = this.forexOtcRotationQueue();
+    if (symbols.length === 0) return;
+    const sym = symbols[this.scanIndex % symbols.length]!;
+    this.scanIndex = (this.scanIndex + 1) % symbols.length;
+    this.lastFocusSymbol = null;
+    this.requestSymbol(sym);
+  }
+
+  private forexOtcRotationQueue(): string[] {
+    const fromPo = Array.from(this.assets.keys())
       .filter((s) => /\sOTC$/i.test(s) && /^[A-Z]{3}\/[A-Z]{3}/i.test(s.replace(/\s+OTC$/i, '')))
       .sort();
-    if (symbols.length === 0) return;
-    if (!this.scanIndex) this.scanIndex = 0;
-    const sym = symbols[this.scanIndex % symbols.length];
-    this.scanIndex = (this.scanIndex + 1) % symbols.length;
-    this.requestSymbol(sym);
+    if (fromPo.length >= this.registrySymbols.length) return fromPo;
+    return this.registrySymbols.length ? this.registrySymbols : fromPo;
   }
 
   private scanIndex = 0;
@@ -123,14 +135,14 @@ export class PocketWsClient {
   /** Ask PO to stream ticks for `displaySymbol` (used when API requests focus for signals). */
   requestSymbol(displaySymbol: string): void {
     if (!displaySymbol || !this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) return;
-    if (this.lastFocusSymbol === displaySymbol) return;
     const poAsset =
       this.poAssetBySymbol.get(displaySymbol) ?? displaySymbolToPoAsset(displaySymbol);
     if (!poAsset) return;
     this.lastFocusSymbol = displaySymbol;
     this.ws.send(`42["changeSymbol",{"asset":"${poAsset}","period":30}]`);
+    this.ws.send(`42["subfor","${poAsset}"]`);
     this.activeSymbol = displaySymbol;
-    this.status(`changeSymbol → ${displaySymbol} (${poAsset})`);
+    this.status(`changeSymbol → ${displaySymbol}`);
   }
 
   /** Bridge ingest: all pairs with payout; catalog price on every row; live tick on active only. */
@@ -318,6 +330,10 @@ export class PocketWsClient {
       this.applyUpdateAssets(data);
       return;
     }
+    if (event === 'updateCloseValue' && data != null) {
+      this.applyUpdateAssets(data);
+      return;
+    }
     if (event === 'updateStream') {
       if (data != null && !isPlaceholder(data)) this.applyUpdateStream(data);
       else this.pendingStream = true;
@@ -330,6 +346,7 @@ export class PocketWsClient {
 
   private nudgeAfterAuth(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) return;
+    this.registerSymbolRegistry();
     const asset = 'EURUSD_otc';
     this.ws.send('42["favorite/load"]');
     this.ws.send('42["indicator/load"]');
@@ -338,7 +355,23 @@ export class PocketWsClient {
     this.ws.send(`42["changeSymbol",{"asset":"${asset}","period":30}]`);
     this.ws.send(`42["subfor","${asset}"]`);
     this.activeSymbol = 'EUR/USD OTC';
-    this.status('Authenticated — PO bootstrap sent');
+    this.status(`PO bootstrap · ${this.registrySymbols.length} OTC pairs queued`);
+  }
+
+  /** Register symbol names for rotation — prices only from PO updateStream/updateAssets. */
+  private registerSymbolRegistry(): void {
+    for (const a of pocketForexOtcSymbolRegistry()) {
+      if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
+      const prev = this.assets.get(a.symbol);
+      if (!prev) {
+        this.assets.set(a.symbol, {
+          symbol: a.symbol,
+          poAsset: a.poAsset,
+          payout: 0,
+          isOTC: true,
+        });
+      }
+    }
   }
 
   private pruneOrphans(): void {

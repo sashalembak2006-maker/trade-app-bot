@@ -54,7 +54,9 @@ function AssetRow({
           ) : (
             <p className="text-[10px] text-slate-600">{priceOnSignalStart}</p>
           )}
-          <p className="text-xs font-bold text-prime-gold">{displayPayout}%</p>
+          <p className="text-xs font-bold text-prime-gold">
+            {displayPayout > 0 ? `${displayPayout}%` : '—'}
+          </p>
           {live && displayPrice != null && (
             <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
               {formatPercentChange(a.change)}

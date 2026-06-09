@@ -184,6 +184,21 @@ export const POCKET_ASSETS: Asset[] = [
   ...INDICES,
 ];
 
+/** Symbol list only — NO prices. Used to rotate PO updateStream across all forex OTC pairs. */
+export function pocketForexOtcSymbolRegistry(): BridgeAssetInput[] {
+  const now = Date.now();
+  return POCKET_ASSETS.filter((a) => a.category === 'forex_otc' && isForexOtcSymbol(a.symbol)).map(
+    (a) => ({
+      symbol: a.symbol,
+      poAsset: displaySymbolToPoAsset(a.symbol),
+      payout: 0,
+      isOTC: true,
+      category: 'forex_otc',
+      timestamp: now,
+    }),
+  );
+}
+
 /** Seed collector/bridge when PO delays updateAssets (forex OTC only). */
 export function pocketForexOtcBridgeCatalog(): BridgeAssetInput[] {
   const now = Date.now();
