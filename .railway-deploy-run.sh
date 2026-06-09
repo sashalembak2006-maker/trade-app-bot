@@ -2,6 +2,9 @@
 set -e
 cd "$(dirname "$0")"
 
+echo "→ Оновлення коду з GitHub..."
+git pull origin main 2>/dev/null || true
+
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 # НЕ експортувати RAILWAY_TOKEN з файлу — ламає свіжий login!
 unset RAILWAY_TOKEN
@@ -37,7 +40,7 @@ $CLI up --detach --service prime-trade
 echo ""
 echo "SUCCESS: білд запущено"
 echo ""
-echo "Чекаю version 1.4.1-bootstrap..."
+echo "Чекаю version 1.4.2-events..."
 for i in $(seq 1 20); do
   sleep 20
   STATUS=$(curl -sf "https://prime-trade-production.up.railway.app/api/collector/status" 2>/dev/null || echo "")
@@ -45,7 +48,7 @@ for i in $(seq 1 20); do
     VER=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
     ASSETS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
     echo "  [$i/20] version=$VER assetCount=$ASSETS"
-    if [ "$VER" = "1.4.1-bootstrap" ] || [ "$VER" = "1.4.0-sio" ]; then
+    if [ "$VER" = "1.4.2-events" ] || [ "$VER" = "1.4.1-bootstrap" ] || [ "$VER" = "1.4.0-sio" ]; then
       echo ""
       echo "✓ НОВИЙ КОД НА ПРОДІ!"
       exit 0

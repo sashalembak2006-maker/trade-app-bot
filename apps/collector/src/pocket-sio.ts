@@ -215,37 +215,22 @@ export class PocketSioClient {
     });
   }
 
-  /** PO terminal sends these after successauth — without them no updateAssets. */
+  /** PO terminal sends these after successauth — event names from PO protocol. */
   private bootstrapAfterAuth(): void {
     const s = this.socket;
     if (!s?.connected) return;
     const asset = 'EURUSD_otc';
     const period = 30;
 
-    const tryEmit = (event: string, data?: unknown) => {
-      try {
-        if (data === undefined) s.emit(event);
-        else s.emit(event, data);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    tryEmit('indicatorLoad');
-    tryEmit('indicator_load');
-    tryEmit('favoriteLoad');
-    tryEmit('favorite_load');
-    tryEmit('priceAlertLoad');
-    tryEmit('price_alert_load');
-    tryEmit('changeAsset', { asset, period });
-    tryEmit('change_asset', { asset, period });
-    tryEmit('changeSymbol', { asset });
-    tryEmit('subscribeToAsset', asset);
-    tryEmit('subscribe_to_asset', asset);
-    tryEmit('subscribeForMarketSentiment', asset);
+    s.emit('favorite/load');
+    s.emit('indicator/load');
+    s.emit('price-alert/load');
+    s.emit('subscribeSymbol', asset);
+    s.emit('changeSymbol', { asset, period });
+    s.emit('subfor', asset);
 
     this.activeSymbol = 'EUR/USD OTC';
-    this.status('Bootstrapped — waiting for updateAssets');
+    this.status('Bootstrapped (PO protocol) — waiting for updateAssets');
   }
 
   private applyUpdateAssets(data: unknown): void {

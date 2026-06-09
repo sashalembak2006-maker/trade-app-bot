@@ -1,8 +1,19 @@
 #!/bin/bash
 cd "$(dirname "$0")"
-echo "PRIME TRADE → Railway deploy (prime-trade)"
-echo "Потрібен інтернет. Чекай 3–5 хв після SUCCESS."
-bash .railway-deploy-run.sh
+clear
 echo ""
-echo "Перевір: https://prime-trade-production.up.railway.app/api/health"
+echo "════════════════════════════════════════════"
+echo " PRIME TRADE → Railway DEPLOY"
+echo "════════════════════════════════════════════"
+echo ""
+echo "Потрібен інтернет. Чекай 3–5 хв після SUCCESS."
+echo ""
+
+bash .railway-deploy-run.sh || { echo ""; echo "✗ Помилка деплою"; read -p "Enter..."; exit 1; }
+
+echo ""
+echo "✓ Відкрий через 4 хв:"
+echo "  https://prime-trade-production.up.railway.app/api/collector/status"
+echo "  version: 1.4.1-bootstrap | assetCount: 100+"
+echo ""
 read -p "Enter щоб закрити..."
