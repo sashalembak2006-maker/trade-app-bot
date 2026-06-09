@@ -1,12 +1,10 @@
 #!/bin/bash
-set -e
 cd "$(dirname "$0")"
 
 echo "→ Оновлення коду з GitHub..."
 git pull origin main 2>/dev/null || true
 
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
-# НЕ експортувати RAILWAY_TOKEN з файлу — ламає свіжий login!
 unset RAILWAY_TOKEN
 
 CLI="npx --yes @railway/cli@5.4.2"
@@ -19,7 +17,24 @@ if ! $CLI whoami; then
 fi
 
 $CLI link -p rare-rebirth -s prime-trade -e production 2>/dev/null \
-  || $CLI link -p rare-rebirth -s prime-trade
+  || $CLI link -p rare-rebirth -s prime-trade 2>/dev/null \
+  || true
+
+set_var() {
+  local key="$1"
+  local val="$2"
+  local attempt
+  for attempt in 1 2 3; do
+    if $CLI variables set "${key}=${val}" --service prime-trade 2>/dev/null; then
+      echo "  ✓ $key"
+      return 0
+    fi
+    echo "  … retry $attempt/3: $key"
+    sleep 3
+  done
+  echo "  ⚠ пропущено (Railway API): $key — змінна вже може бути на сервері"
+  return 0
+}
 
 AUTH_FILE="$(mktemp)"
 cat > "$AUTH_FILE" <<'AUTHEOF'
@@ -28,15 +43,21 @@ AUTHEOF
 B64=$(base64 < "$AUTH_FILE" | tr -d '\n')
 rm -f "$AUTH_FILE"
 
-echo "→ Variables..."
-$CLI variables set "PO_WS_URL=wss://api-eu.po.market/socket.io/?EIO=4&transport=websocket" --service prime-trade
-$CLI variables set "PO_AUTH_MESSAGE_B64=$B64" --service prime-trade
-$CLI variables set "MARKET_DATA_MODE=platform" --service prime-trade
-$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=false" --service prime-trade
-$CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service prime-trade
+echo "→ Variables (помилка API не зупиняє деплой)..."
+set_var "PO_WS_URL" "wss://api-eu.po.market/socket.io/?EIO=4&transport=websocket"
+set_var "PO_AUTH_MESSAGE_B64" "$B64"
+set_var "MARKET_DATA_MODE" "platform"
+set_var "PLATFORM_SYNTHETIC_FALLBACK" "false"
+set_var "BRIDGE_ANCHORED_PULSE" "false"
+set_var "SIGNAL_PRICE_WAIT_MS" "2200"
+set_var "SIGNAL_FOCUS_GRACE_MS" "600"
 
 echo "→ BUILD нового коду (5-7 хв)..."
-$CLI up --detach --service prime-trade
+if ! $CLI up --detach --service prime-trade; then
+  echo ""
+  echo "✗ railway up не вдався. Спробуй ще раз через 1 хв або Railway → Redeploy."
+  exit 1
+fi
 
 echo ""
 echo "SUCCESS: білд запущено"
@@ -49,7 +70,7 @@ for i in $(seq 1 20); do
     VER=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
     ASSETS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
     echo "  [$i/20] version=$VER assetCount=$ASSETS"
-    if [ "$VER" = "1.5.5-timestamp-fix" ]; then
+    if [ "$VER" = "1.5.6-signal-fast" ]; then
       echo ""
       echo "✓ НОВИЙ КОД НА ПРОДІ!"
       exit 0
