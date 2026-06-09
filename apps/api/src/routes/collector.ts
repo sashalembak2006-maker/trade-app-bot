@@ -1,13 +1,17 @@
 import { Router } from 'express';
+import { pocketForexOtcBridgeCatalog } from '@trade-app/shared';
 import {
   acknowledgeCollectorRestart,
   getCollectorStatus,
   isCollectorRestartRequested,
   updateCollectorHeartbeat,
 } from '../services/collector-status.js';
+import { getBridgeProvider, getMarketMode, setMarketMode } from '../market.js';
+import { onBridgeIngest } from '../services/bridge-status.js';
 import { log } from '../logger.js';
 
 const router = Router();
+let lastApiSeedAt = 0;
 
 function requireCollectorSecret(req: { headers: Record<string, unknown> }, res: { status: (n: number) => { json: (b: unknown) => void } }) {
   const secret = process.env.COLLECTOR_SECRET;
@@ -37,6 +41,22 @@ router.post('/heartbeat', (req, res) => {
     priced: next.pricedCount,
     ws: next.wsConnected,
   });
+
+  const bridge = getBridgeProvider();
+  if (
+    next.wsConnected &&
+    (bridge.status.assetCount ?? 0) === 0 &&
+    Date.now() - lastApiSeedAt > 15_000
+  ) {
+    const catalog = pocketForexOtcBridgeCatalog();
+    const accepted = bridge.ingest(catalog, next.activeSymbol ?? 'EUR/USD OTC');
+    if (accepted > 0) {
+      lastApiSeedAt = Date.now();
+      if (getMarketMode() !== 'platform') setMarketMode('platform');
+      onBridgeIngest(accepted);
+      log.info('API auto-seeded OTC catalog', { accepted, pairs: catalog.length });
+    }
+  }
 
   res.json({
     ok: true,
