@@ -167,6 +167,7 @@ export const api = {
       payout: number | null;
       live: boolean;
       catalog: number | null;
+      display: number | null;
     }>(`/api/ticks?asset=${encodeURIComponent(asset)}&since=${since}`, { timeoutMs: 3000 }),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
   generateSignal: (body: Record<string, unknown>) =>

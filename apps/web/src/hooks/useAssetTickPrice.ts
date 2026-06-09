@@ -2,31 +2,48 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { isPlausibleAssetPrice } from '../utils/price-validation';
 
-/** Poll /api/ticks — only show prices confirmed from Pocket Option (live stream or PO catalog). */
+/** Poll /api/ticks + PO price from bridge list (scan/catalog — real, not fake). */
 export function useAssetTickPrice(
   symbol: string,
   seedPayout: number,
+  bridgePrice: number | null,
 ): { price: number | null; payout: number; live: boolean } {
-  const [price, setPrice] = useState<number | null>(null);
+  const [price, setPrice] = useState<number | null>(
+    bridgePrice != null && isPlausibleAssetPrice(bridgePrice, symbol) ? bridgePrice : null,
+  );
   const [payout, setPayout] = useState(seedPayout);
   const [live, setLive] = useState(false);
   const sinceRef = useRef(0);
 
   useEffect(() => {
     sinceRef.current = 0;
-    setPrice(null);
+    const seed =
+      bridgePrice != null && isPlausibleAssetPrice(bridgePrice, symbol) ? bridgePrice : null;
+    setPrice(seed);
     setLive(false);
     setPayout(seedPayout);
-  }, [symbol, seedPayout]);
+  }, [symbol, seedPayout, bridgePrice]);
 
   useEffect(() => {
     let cancelled = false;
+
+    const applyBridge = () => {
+      if (bridgePrice != null && isPlausibleAssetPrice(bridgePrice, symbol)) {
+        setLive(false);
+        setPrice(bridgePrice);
+      }
+    };
 
     const poll = async () => {
       try {
         const data = await api.getTicks(symbol, sinceRef.current);
         if (cancelled) return;
         if (data.payout != null) setPayout(data.payout);
+        if (data.display != null && isPlausibleAssetPrice(data.display, symbol)) {
+          setLive(Boolean(data.live));
+          setPrice(data.display);
+          return;
+        }
         if (data.live && data.latest != null && isPlausibleAssetPrice(data.latest, symbol)) {
           setLive(true);
           setPrice(data.latest);
@@ -40,6 +57,11 @@ export function useAssetTickPrice(
           setPrice(data.catalog);
           return;
         }
+        if (data.latest != null && isPlausibleAssetPrice(data.latest, symbol)) {
+          setLive(false);
+          setPrice(data.latest);
+          return;
+        }
         if (data.ticks.length > 0) {
           const last = data.ticks[data.ticks.length - 1]!;
           if (isPlausibleAssetPrice(last.price, symbol)) {
@@ -49,20 +71,23 @@ export function useAssetTickPrice(
             return;
           }
         }
-        setLive(false);
-        setPrice(null);
+        applyBridge();
+        if (bridgePrice == null) {
+          setLive(false);
+          setPrice(null);
+        }
       } catch {
-        /* keep last known PO price */
+        applyBridge();
       }
     };
 
     void poll();
-    const id = setInterval(poll, 400);
+    const id = setInterval(poll, 300);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [symbol]);
+  }, [symbol, bridgePrice]);
 
   return { price, payout, live };
 }

@@ -14,8 +14,11 @@ export interface TickQueryResult {
   live: boolean;
   /** PO catalog snapshot (updateAssets) — real but not streaming. */
   catalog: number | null;
+  /** Last PO quote for UI — live or recent catalog. */
+  display: number | null;
 }
 
+const CATALOG_TTL_MS = 30 * 60_000;
 const MAX_TICKS_PER_SYMBOL = 400;
 
 /** Resolve ?asset=eurusd_otc or ?asset=EUR/USD OTC */
@@ -116,13 +119,17 @@ export class MarketTickStore {
     const cat = this.catalogPrice.get(symbol) ?? null;
     const catAt = this.catalogAt.get(symbol) ?? 0;
     const isLive = liveAt > 0 && Date.now() - liveAt < 5000;
+    const last = this.lastPrice.get(symbol) ?? null;
+    const catalog =
+      catAt > 0 && Date.now() - catAt < CATALOG_TTL_MS ? cat : null;
     return {
       asset: symbol,
       ticks,
-      latest: isLive ? (this.lastPrice.get(symbol) ?? null) : null,
+      latest: last,
       payout: this.payout.get(symbol) ?? null,
       live: isLive,
-      catalog: catAt > 0 && Date.now() - catAt < 120_000 ? cat : null,
+      catalog,
+      display: isLive && last != null ? last : catalog ?? last,
     };
   }
 

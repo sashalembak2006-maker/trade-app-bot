@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import type { Asset } from '../../types';
 import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
 import { formatPercentChange } from '../../utils/format';
+import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
 
 interface AssetRowProps {
@@ -21,7 +22,17 @@ function AssetRow({
   onSelect,
   onToggleFavorite,
 }: AssetRowProps) {
-  const { price: displayPrice, payout: displayPayout, live } = useAssetTickPrice(a.symbol, a.payout);
+  const bridgePrice =
+    a.price != null && isPlausibleAssetPrice(a.price, a.symbol)
+      ? a.price
+      : a.lastKnownPrice != null && isPlausibleAssetPrice(a.lastKnownPrice, a.symbol)
+        ? a.lastKnownPrice
+        : null;
+  const { price: displayPrice, payout: displayPayout, live } = useAssetTickPrice(
+    a.symbol,
+    a.payout,
+    bridgePrice,
+  );
 
   return (
     <motion.button

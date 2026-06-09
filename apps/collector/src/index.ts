@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PocketWsClient } from './pocket-ws.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.5.6-signal-fast';
+const VERSION = '1.5.7-price-fallback';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
