@@ -348,24 +348,21 @@ router.post('/signals/generate', async (req, res) => {
       priceSource = resolved.source;
 
       if (price == null) {
-        await sleep(Math.min(focusGraceMs(), 400));
+        await sleep(200);
         const retry = resolveSignalEntryPrice(symbol, provider);
         price = retry.price;
         priceSource = retry.source;
       }
 
-      if (price == null) {
-        log.info('Signal price wait (live refresh)', { symbol, waitMs });
-        try {
-          price = await provider.waitForLivePrice(symbol, Math.min(waitMs, 1500), {
-            allowSynthetic: false,
-          });
-          priceSource = 'wait_live';
-        } catch {
-          const fallback = resolveSignalEntryPrice(symbol, provider);
-          price = fallback.price;
-          priceSource = fallback.source ?? 'wait_failed';
-        }
+      const hint = Number(req.body?.bridgePrice);
+      if (
+        price == null &&
+        Number.isFinite(hint) &&
+        hint > 0 &&
+        isPlausibleMarketPrice(hint, symbol)
+      ) {
+        price = hint;
+        priceSource = 'bridge_hint';
       }
     } else {
       price = await provider.getAssetPrice(symbol);

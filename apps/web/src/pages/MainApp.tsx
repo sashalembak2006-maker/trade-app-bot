@@ -32,7 +32,7 @@ interface MainAppProps {
 }
 
 export function MainApp({ limited = false, access, telegramId, apiError, onRefreshAccess }: MainAppProps) {
-  const { language, setAssets, marketStatus, setMarketStatus, accessStatus, userProfile } = useAppStore();
+  const { language, setAssets, marketStatus, setMarketStatus, accessStatus, userProfile, signalPhase, selectedAsset } = useAppStore();
   const [showRegistration, setShowRegistration] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const effectiveLimited = limited || !accessStatus?.hasAppAccess;
@@ -97,8 +97,10 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
   }, [setAssets, setMarketStatus]);
 
-  // Poll assets + status every 150ms (Telegram WebView — WS can be flaky).
+  // Poll assets — pause while signal API runs (Telegram WebView has ~6 connection limit).
   useEffect(() => {
+    if (signalPhase === 'loading') return;
+
     const reloadAssets = () => {
       api
         .getAssets()
@@ -110,9 +112,10 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
 
     reloadAssets();
-    const id = setInterval(reloadAssets, 150);
+    const ms = signalPhase === 'result' || selectedAsset ? 400 : 700;
+    const id = setInterval(reloadAssets, ms);
     return () => clearInterval(id);
-  }, [setMarketStatus, setAssets]);
+  }, [setMarketStatus, setAssets, signalPhase, selectedAsset]);
 
   const notConfigured = marketStatus && !marketStatus.configured && marketStatus.mode !== 'live';
   const platformUnavailable =

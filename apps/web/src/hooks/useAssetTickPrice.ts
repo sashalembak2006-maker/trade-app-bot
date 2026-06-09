@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
+import { useAppStore } from '../store/useAppStore';
 import { isPlausibleAssetPrice } from '../utils/price-validation';
 
 /** Poll /api/ticks + PO price from bridge list (scan/catalog — real, not fake). */
@@ -35,6 +36,7 @@ export function useAssetTickPrice(
     };
 
     const poll = async () => {
+      if (useAppStore.getState().signalPhase === 'loading') return;
       try {
         const data = await api.getTicks(symbol, sinceRef.current);
         if (cancelled) return;
@@ -82,7 +84,7 @@ export function useAssetTickPrice(
     };
 
     void poll();
-    const id = setInterval(poll, 300);
+    const id = setInterval(poll, 700);
     return () => {
       cancelled = true;
       clearInterval(id);

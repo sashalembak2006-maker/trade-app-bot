@@ -17,10 +17,10 @@ import {
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 900;
-const COVERAGE_ANALYSIS_MS = 600;
-const SIGNAL_REQUEST_TIMEOUT_MS = 45_000;
-const LOADING_WATCHDOG_MS = 50_000;
+const ANALYSIS_MIN_MS = 600;
+const COVERAGE_ANALYSIS_MS = 500;
+const SIGNAL_REQUEST_TIMEOUT_MS = 18_000;
+const LOADING_WATCHDOG_MS = 22_000;
 
 /** Cancel stale in-flight signal requests when user retries. */
 let activeSignalAbort: AbortController | null = null;
@@ -375,7 +375,10 @@ export function SignalModal() {
     setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
 
-    void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+    await api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+
+    const bridgePrice =
+      selectedAsset.price ?? selectedAsset.lastKnownPrice ?? null;
 
     const signalPromise = api.generateSignal(
       {
@@ -383,22 +386,13 @@ export function SignalModal() {
         symbol: selectedAsset.symbol,
         timeframe: selectedTimeframe,
         isOTC: selectedAsset.isOTC,
+        ...(bridgePrice != null ? { bridgePrice } : {}),
       },
       { signal: abort.signal, timeoutMs: SIGNAL_REQUEST_TIMEOUT_MS },
     );
 
-    const signalWithTimeout = Promise.race([
-      signalPromise,
-      new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(Object.assign(new Error(t.errorTimeout), { code: 'TIMEOUT' }) as ApiError),
-          SIGNAL_REQUEST_TIMEOUT_MS,
-        );
-      }),
-    ]);
-
     try {
-      const [result] = await Promise.all([signalWithTimeout, runAnalysisAnimation()]);
+      const [result] = await Promise.all([signalPromise, runAnalysisAnimation()]);
       if (abort.signal.aborted) return;
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
