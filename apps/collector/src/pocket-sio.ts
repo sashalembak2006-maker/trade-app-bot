@@ -171,13 +171,14 @@ export class PocketSioClient {
 
     this.socket.on('successauth', () => {
       this.connected = true;
-      this.status('Authenticated — waiting for updateAssets');
-      setTimeout(() => {
-        if (this.socket?.connected) {
-          this.socket.emit('changeSymbol', { asset: 'EURUSD_otc' });
-          this.activeSymbol = 'EUR/USD OTC';
-        }
-      }, 300);
+      this.status('Authenticated — bootstrapping PO chart');
+      this.bootstrapAfterAuth();
+    });
+
+    // PO may use alternate event names
+    this.socket.on('successAuth', () => {
+      this.connected = true;
+      this.bootstrapAfterAuth();
     });
 
     this.socket.on('updateAssets', (data: unknown) => {
@@ -208,7 +209,43 @@ export class PocketSioClient {
     this.socket.on('disconnect', (reason: string) => {
       this.connected = false;
       this.status(`Disconnected (${reason})`);
+      if (!this.stopped && reason === 'io server disconnect') {
+        setTimeout(() => this.connect(), 2500);
+      }
     });
+  }
+
+  /** PO terminal sends these after successauth — without them no updateAssets. */
+  private bootstrapAfterAuth(): void {
+    const s = this.socket;
+    if (!s?.connected) return;
+    const asset = 'EURUSD_otc';
+    const period = 30;
+
+    const tryEmit = (event: string, data?: unknown) => {
+      try {
+        if (data === undefined) s.emit(event);
+        else s.emit(event, data);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    tryEmit('indicatorLoad');
+    tryEmit('indicator_load');
+    tryEmit('favoriteLoad');
+    tryEmit('favorite_load');
+    tryEmit('priceAlertLoad');
+    tryEmit('price_alert_load');
+    tryEmit('changeAsset', { asset, period });
+    tryEmit('change_asset', { asset, period });
+    tryEmit('changeSymbol', { asset });
+    tryEmit('subscribeToAsset', asset);
+    tryEmit('subscribe_to_asset', asset);
+    tryEmit('subscribeForMarketSentiment', asset);
+
+    this.activeSymbol = 'EUR/USD OTC';
+    this.status('Bootstrapped — waiting for updateAssets');
   }
 
   private applyUpdateAssets(data: unknown): void {

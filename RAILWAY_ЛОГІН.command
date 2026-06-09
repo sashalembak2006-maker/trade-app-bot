@@ -11,6 +11,6 @@ npx --yes @railway/cli@5.4.2 login
 echo ""
 npx --yes @railway/cli@5.4.2 whoami
 echo ""
-echo "✓ Після входу запусти ШВИДКИЙ_ФІКС.command"
+echo "✓ Після входу запусти ДЕПЛОЙ.command"
 echo ""
 read -p "Enter щоб закрити..."
