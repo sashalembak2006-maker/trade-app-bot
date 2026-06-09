@@ -20,7 +20,6 @@ export function normalizePoAuthMessage(raw: string): string {
       null;
     if (!session) return m;
 
-    const uid = obj.uid ?? obj.userId;
     const isDemo =
       obj.isDemo === 1 ||
       obj.isDemo === true ||
@@ -29,11 +28,12 @@ export function normalizePoAuthMessage(raw: string): string {
       obj.isChart === 1;
 
     const normalized: Record<string, unknown> = {
+      ...obj,
       session,
       isDemo: isDemo ? 1 : 0,
     };
-    if (uid != null) normalized.uid = uid;
-    if (typeof obj.lang === 'string') normalized.lang = obj.lang;
+    delete normalized.sessionToken;
+    delete normalized.token;
 
     return `${prefix}${JSON.stringify(normalized)}]`;
   } catch {

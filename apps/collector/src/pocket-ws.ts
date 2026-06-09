@@ -13,8 +13,16 @@ import {
   parseSocketIoTextFrame,
 } from './po-binary.js';
 
+const DEFAULT_PO_WS_URLS = [
+  'wss://api-eu.po.market/socket.io/?EIO=4&transport=websocket',
+  'wss://api-us.po.market/socket.io/?EIO=4&transport=websocket',
+  'wss://api.po.market/socket.io/?EIO=4&transport=websocket',
+];
+
 export interface PocketWsConfig {
   wsUrl: string;
+  /** Alternate PO endpoints if primary hangs or is blocked. */
+  wsUrlFallbacks?: string[];
   /** Full Socket.IO auth frame, e.g. 42["auth",{...}] */
   authMessage: string;
   onStatus?: (msg: string) => void;
@@ -46,8 +54,31 @@ export class PocketWsClient {
   private stopped = false;
   private connected = false;
   private lastMessage = 'initializing';
+  private urlIndex = 0;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
+  private gotEngineOpen = false;
 
   constructor(private readonly cfg: PocketWsConfig) {}
+
+  private wsUrls(): string[] {
+    const primary = this.cfg.wsUrl.trim();
+    const fallbacks = (this.cfg.wsUrlFallbacks ?? [])
+      .map((u) => u.trim())
+      .filter(Boolean);
+    const all = [primary, ...fallbacks];
+    return [...new Set(all.length ? all : DEFAULT_PO_WS_URLS)];
+  }
+
+  private currentWsUrl(): string {
+    const urls = this.wsUrls();
+    return urls[this.urlIndex % urls.length] ?? urls[0]!;
+  }
+
+  private rotateWsUrl(): void {
+    const urls = this.wsUrls();
+    if (urls.length <= 1) return;
+    this.urlIndex = (this.urlIndex + 1) % urls.length;
+  }
 
   start(): void {
     this.stopped = false;
@@ -119,12 +150,15 @@ export class PocketWsClient {
 
   private connect(): void {
     if (this.stopped) return;
-    this.status(`Connecting to ${this.cfg.wsUrl}…`);
+    this.gotEngineOpen = false;
+    const url = this.currentWsUrl();
+    this.status(`Connecting to ${url}…`);
 
     try {
       // PO sits behind Cloudflare — a bare Node WS (no Origin/User-Agent) is
       // rejected and the socket closes immediately. Send browser-like headers.
-      this.ws = new WebSocket(this.cfg.wsUrl, {
+      this.ws = new WebSocket(url, {
+        handshakeTimeout: 12_000,
         headers: {
           Origin: 'https://pocketoption.com',
           'User-Agent':
@@ -135,36 +169,43 @@ export class PocketWsClient {
         },
       });
     } catch (e) {
+      this.rotateWsUrl();
       this.scheduleReconnect(e instanceof Error ? e.message : 'connect failed');
       return;
     }
+
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = setTimeout(() => {
+      if (this.stopped || this.connected || this.gotEngineOpen) return;
+      this.status('Connect timeout — trying next PO endpoint');
+      this.ws?.terminate();
+    }, 14_000);
 
     this.ws.on('open', () => {
       this.reconnectAttempt = 0;
       this.connected = false;
       this.status('WebSocket open — waiting for PO handshake');
-      // Fallback: some edges stall before 0{ — nudge Socket.IO connect.
-      setTimeout(() => {
-        if (!this.stopped && this.ws?.readyState === WebSocket.OPEN && !this.connected) {
-          this.ws.send('40');
-        }
-      }, 800);
     });
 
     this.ws.on('message', (raw) => this.handleMessage(raw));
 
     this.ws.on('close', (code: number, reason: Buffer) => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
       this.connected = false;
       const why = reason && reason.length ? ` ${reason.toString('utf8').slice(0, 80)}` : '';
+      if (!this.gotEngineOpen) this.rotateWsUrl();
       this.scheduleReconnect(`socket closed (code ${code}${why})`);
     });
 
     this.ws.on('unexpected-response', (_req, res) => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
       this.connected = false;
+      this.rotateWsUrl();
       this.scheduleReconnect(`HTTP ${res.statusCode} (handshake rejected)`);
     });
 
     this.ws.on('error', (err) => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
       this.connected = false;
       this.status(`WS error: ${err.message}`);
     });
@@ -301,6 +342,8 @@ export class PocketWsClient {
       return;
     }
     if (text.startsWith('0{')) {
+      this.gotEngineOpen = true;
+      if (this.connectTimer) clearTimeout(this.connectTimer);
       this.ws?.send('40');
       return;
     }

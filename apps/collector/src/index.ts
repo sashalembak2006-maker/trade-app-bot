@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PocketWsClient } from './pocket-ws.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.3.2-textframes';
+const VERSION = '1.3.3-connect';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
@@ -21,6 +21,10 @@ const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/$/, 
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? process.env.COLLECTOR_SECRET ?? '';
 const COLLECTOR_SECRET = process.env.COLLECTOR_SECRET ?? BRIDGE_SECRET;
 const PO_WS_URL = process.env.PO_WS_URL ?? '';
+const PO_WS_FALLBACKS = (process.env.PO_WS_URL_FALLBACKS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const PUSH_MS = Number(process.env.COLLECTOR_PUSH_INTERVAL_MS ?? 250);
 const HEARTBEAT_MS = Number(process.env.COLLECTOR_HEARTBEAT_MS ?? 10000);
 
@@ -124,6 +128,7 @@ function main(): void {
 
   const client = new PocketWsClient({
     wsUrl: PO_WS_URL,
+    wsUrlFallbacks: PO_WS_FALLBACKS,
     authMessage: PO_AUTH_MESSAGE,
     onStatus: (m) => log(`PO: ${m}`),
   });
