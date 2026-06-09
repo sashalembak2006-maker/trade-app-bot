@@ -183,6 +183,11 @@ export const api = {
       timeoutMs: opts?.timeoutMs ?? 45_000,
       signal: opts?.signal,
     }),
+  getCoveragePrice: (symbol: string) =>
+    fetchJson<{ symbol: string; entryPrice: number; source?: string; at: number }>(
+      '/api/signals/coverage',
+      { method: 'POST', body: JSON.stringify({ symbol }), timeoutMs: 12_000 },
+    ),
   calculate: (body: Record<string, unknown>) =>
     fetchJson<CalculatorResult>('/api/calculator', { method: 'POST', body: JSON.stringify(body) }),
   getNews: () => fetchJson<NewsItem[]>('/api/news', { timeoutMs: 6000 }),

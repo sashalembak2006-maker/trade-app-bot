@@ -21,10 +21,7 @@ export function catalogPriceFromTickStore(symbol: string): number | null {
   return null;
 }
 
-/**
- * Fast path for signals — prefer live, fall back to recent PO scan/catalog.
- * Avoids blocking second+ signals when live stream briefly pauses.
- */
+/** Fast PO quote for signals / coverage — live preferred, catalog OK (real PO scan). */
 export function resolveSignalEntryPrice(
   symbol: string,
   provider: BridgeMarketDataProvider,
@@ -35,14 +32,12 @@ export function resolveSignalEntryPrice(
   const fromCatalogTicks = catalogPriceFromTickStore(symbol);
   if (fromCatalogTicks != null) return { price: fromCatalogTicks, source: 'catalog_tick' };
 
-  if (provider.hasLivePrice(symbol)) {
-    const quote = provider.getBridgeQuote(symbol, 4_000);
-    if (quote != null && isPlausibleMarketPrice(quote, symbol)) {
-      return { price: quote, source: 'bridge_live' };
-    }
+  const bridgeLive = provider.getBridgeQuote(symbol, 4_000);
+  if (bridgeLive != null && isPlausibleMarketPrice(bridgeLive, symbol)) {
+    return { price: bridgeLive, source: provider.hasLivePrice(symbol) ? 'bridge_live' : 'bridge_catalog' };
   }
 
-  const catalog = provider.getBridgeQuote(symbol, 120_000);
+  const catalog = provider.getBridgeQuote(symbol, 180_000);
   if (catalog != null && isPlausibleMarketPrice(catalog, symbol)) {
     return { price: catalog, source: 'bridge_catalog' };
   }

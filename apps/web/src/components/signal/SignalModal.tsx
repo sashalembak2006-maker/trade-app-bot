@@ -30,14 +30,6 @@ function abortActiveSignalRequest(): void {
   activeSignalAbort = null;
 }
 
-async function fetchPoEntryPrice(symbol: string): Promise<number> {
-  const ticks = await api.getTicks(symbol, 0);
-  if (ticks.live && ticks.latest != null) return ticks.latest;
-  const live = await api.getLivePrice(symbol, 900);
-  if (live.price != null && live.price > 0) return live.price;
-  throw Object.assign(new Error('NO_PRICE'), { code: 'NO_PRICE' });
-}
-
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -184,6 +176,10 @@ export function SignalModal() {
   useEffect(() => {
     if (!selectedAsset) return;
     void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+    const id = setInterval(() => {
+      void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+    }, 4000);
+    return () => clearInterval(id);
   }, [selectedAsset?.symbol]);
 
   const { seconds, formatted } = useCountdown(
@@ -440,19 +436,22 @@ export function SignalModal() {
     if (!next) return;
 
     hapticFeedback('medium');
+    abortActiveSignalRequest();
     setMartingaleMultiplier(next);
+    setSignalPhase('loading');
+    setSignalError(null);
     setSettlement(null);
     settledRef.current = false;
-    setSignalError(null);
     useAppStore.setState({ signalCurrentPrice: null });
 
     try {
-      void api.requestFocus(selectedAsset.symbol, 45_000).catch(() => {});
-      const [, entryPrice] = await Promise.all([
+      void api.requestFocus(selectedAsset.symbol, 60_000).catch(() => {});
+      const [, coverage] = await Promise.all([
         runAnalysisAnimation(COVERAGE_ANALYSIS_MS),
-        fetchPoEntryPrice(selectedAsset.symbol),
+        api.getCoveragePrice(selectedAsset.symbol),
       ]);
 
+      const entryPrice = coverage.entryPrice;
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       beginSignalResult({
@@ -466,8 +465,11 @@ export function SignalModal() {
       hapticSuccess();
       logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`, entryPrice);
     } catch (e) {
-      logger.error('Signal', 'coverage failed', e);
-      setSignalError(t.errorSignal);
+      const err = e as ApiError;
+      logger.error('Signal', 'coverage failed', err.code, err.message);
+      setSignalError(
+        err.code === 'NO_PRICE' || err.status === 422 ? t.openAssetOnPlatform : t.errorSignal,
+      );
       setSignalPhase('settled');
     }
   };

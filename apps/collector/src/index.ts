@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PocketWsClient } from './pocket-ws.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.5.8-signal-loop';
+const VERSION = '1.5.9-coverage-fast';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
@@ -141,7 +141,7 @@ function main(): void {
 
   setInterval(() => {
     void pollFocus(client);
-  }, 2000);
+  }, 800);
 
   setInterval(() => {
     if (Date.now() < signalFocusUntil) return;

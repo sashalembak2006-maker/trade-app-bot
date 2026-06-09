@@ -232,27 +232,27 @@ router.get('/assets/:symbol/price', async (req, res) => {
     requestFocus(symbol, 15_000);
   }
   try {
+    if (provider instanceof BridgeMarketDataProvider) {
+      const resolved = resolveSignalEntryPrice(symbol, provider);
+      if (resolved.price != null) {
+        return res.json({
+          symbol,
+          price: resolved.price,
+          live: resolved.source === 'live_tick' || resolved.source === 'bridge_live',
+          source: resolved.source,
+          at: Date.now(),
+        });
+      }
+      const waitMs = Math.min(Number(req.query.waitMs) || 800, 2000);
+      const price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+      return res.json({ symbol, price, live: true, at: Date.now() });
+    }
+
     const tickLive = livePriceFromTickStore(symbol);
     if (tickLive != null) {
       return res.json({ symbol, price: tickLive, live: true, at: Date.now() });
     }
-
-    let price: number;
-    if (provider instanceof BridgeMarketDataProvider) {
-      const quote = provider.hasLivePrice(symbol)
-        ? provider.getBridgeQuote(symbol, 4_000)
-        : null;
-      if (quote != null) {
-        price = quote;
-      } else {
-        const waitMs = Math.min(Number(req.query.waitMs) || 1200, 4000);
-        price = await provider.waitForLivePrice(symbol, waitMs, {
-          allowSynthetic: false,
-        });
-      }
-    } else {
-      price = await provider.getAssetPrice(symbol);
-    }
+    const price = await provider.getAssetPrice(symbol);
     res.json({ symbol, price, live: true, at: Date.now() });
   } catch {
     res.status(422).json({ error: 'No live price for asset', code: 'NO_PRICE' });
@@ -356,8 +356,16 @@ router.post('/signals/generate', async (req, res) => {
 
       if (price == null) {
         log.info('Signal price wait (live refresh)', { symbol, waitMs });
-        price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
-        priceSource = 'wait_live';
+        try {
+          price = await provider.waitForLivePrice(symbol, Math.min(waitMs, 1500), {
+            allowSynthetic: false,
+          });
+          priceSource = 'wait_live';
+        } catch {
+          const fallback = resolveSignalEntryPrice(symbol, provider);
+          price = fallback.price;
+          priceSource = fallback.source ?? 'wait_failed';
+        }
       }
     } else {
       price = await provider.getAssetPrice(symbol);
@@ -428,6 +436,56 @@ router.post('/signals/generate', async (req, res) => {
       },
     })
     .catch((err) => log.error('Signal history persist failed', err));
+});
+
+/** Fast entry price for martingale coverage — no analysis engine, real PO quote only. */
+router.post('/signals/coverage', async (req, res) => {
+  const user = await ensureUser(req, res);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (user.isBanned) return res.status(403).json({ error: 'Banned' });
+  if (!hasSignalAccess(user)) return res.status(403).json({ error: 'Access denied', code: 'NO_ACCESS' });
+
+  const symbol = String(req.body?.symbol ?? '').trim();
+  if (!symbol) return res.status(400).json({ error: 'symbol required' });
+
+  const provider = getMarketProvider();
+  if (!provider.status.configured) {
+    return res.status(503).json({ error: 'DATA SOURCE NOT CONFIGURED', code: 'DATA_SOURCE_NOT_CONFIGURED' });
+  }
+
+  if (getMarketMode() === 'platform') {
+    requestFocus(symbol, 60_000);
+  }
+
+  try {
+    let price: number | null = null;
+    let source: string | null = null;
+
+    if (provider instanceof BridgeMarketDataProvider) {
+      const resolved = resolveSignalEntryPrice(symbol, provider);
+      price = resolved.price;
+      source = resolved.source;
+      if (price == null) {
+        await sleep(250);
+        const retry = resolveSignalEntryPrice(symbol, provider);
+        price = retry.price;
+        source = retry.source;
+      }
+    } else {
+      price = await provider.getAssetPrice(symbol);
+      source = 'provider';
+    }
+
+    if (price == null || !isPlausibleMarketPrice(price, symbol)) {
+      return res.status(422).json({ error: 'No live price for asset', code: 'NO_PRICE' });
+    }
+
+    log.info('Coverage entry price', { user: user.id, symbol, price, source });
+    return res.json({ symbol, entryPrice: price, source, at: Date.now() });
+  } catch (e) {
+    log.warn('Coverage price failed', { symbol, err: (e as Error).message });
+    return res.status(422).json({ error: 'No live price for asset', code: 'NO_PRICE' });
+  }
 });
 
 router.get('/signals/history', async (req, res) => {
