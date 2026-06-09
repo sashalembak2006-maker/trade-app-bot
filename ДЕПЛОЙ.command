@@ -7,6 +7,7 @@ echo " PRIME TRADE → Railway DEPLOY"
 echo "════════════════════════════════════════════"
 echo ""
 echo "Потрібен інтернет. Чекай 3–5 хв після SUCCESS."
+echo "(Якщо зависає на Variables — закрий і запусти ДЕПЛОЙ_ШВИДКО.command)"
 echo ""
 
 bash .railway-deploy-run.sh || { echo ""; echo "✗ Помилка деплою"; read -p "Enter..."; exit 1; }
