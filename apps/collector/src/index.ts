@@ -1,13 +1,27 @@
 import 'dotenv/config';
 import { PocketWsClient } from './pocket-ws.js';
+import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.3.2-textframes';
+
+function resolvePoAuthMessage(): string {
+  const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
+  if (b64) {
+    try {
+      return normalizePoAuthMessage(Buffer.from(b64, 'base64').toString('utf8'));
+    } catch {
+      /* invalid base64 */
+    }
+  }
+  return normalizePoAuthMessage(process.env.PO_AUTH_MESSAGE ?? '');
+}
+
+const PO_AUTH_MESSAGE = resolvePoAuthMessage();
 const API_URL = (process.env.API_URL ?? 'http://127.0.0.1:3001').replace(/\/$/, '');
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET ?? process.env.COLLECTOR_SECRET ?? '';
 const COLLECTOR_SECRET = process.env.COLLECTOR_SECRET ?? BRIDGE_SECRET;
 const PO_WS_URL = process.env.PO_WS_URL ?? '';
-const PO_AUTH_MESSAGE = process.env.PO_AUTH_MESSAGE ?? '';
-const PUSH_MS = Number(process.env.COLLECTOR_PUSH_INTERVAL_MS ?? 1000);
+const PUSH_MS = Number(process.env.COLLECTOR_PUSH_INTERVAL_MS ?? 250);
 const HEARTBEAT_MS = Number(process.env.COLLECTOR_HEARTBEAT_MS ?? 10000);
 
 function log(msg: string, extra?: unknown) {
@@ -104,6 +118,9 @@ function main(): void {
 
   log(`Starting VPS Data Collector v${VERSION}`);
   log(`API: ${API_URL} | push every ${PUSH_MS}ms`);
+  if (PO_AUTH_MESSAGE.includes('sessionToken')) {
+    log('WARN: PO_AUTH still uses sessionToken — set PO_AUTH_MESSAGE on Railway after redeploy');
+  }
 
   const client = new PocketWsClient({
     wsUrl: PO_WS_URL,

@@ -3,6 +3,7 @@ import type { BridgeAssetInput } from '@trade-app/shared';
 import { getBridgeProvider, getMarketMode, setMarketMode } from '../market.js';
 import { getFocus } from '../services/focus.js';
 import { onBridgeIngest } from '../services/bridge-status.js';
+import { recordBridgeTicks } from '../services/market-ticks.js';
 import { isBridgeSecretConfigured, isBridgeSecretValid } from '../services/bridge-auth.js';
 import { log } from '../logger.js';
 
@@ -43,6 +44,7 @@ router.post('/assets/update', (req, res) => {
       log.info('Bridge connected — switched market mode to platform');
     }
     if (accepted > 0) onBridgeIngest(accepted);
+    if (accepted > 0) recordBridgeTicks(assets, activeSymbol);
     log.debug('Bridge data ingested', { accepted, source: req.body?.source, assetCount: assets.length });
     return res.json({ ok: true, accepted, status: bridge.status });
   } catch (err) {

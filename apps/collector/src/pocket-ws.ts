@@ -6,6 +6,12 @@ import {
   poSymbolToDisplay,
   type BridgeAssetInput,
 } from '@trade-app/shared';
+import {
+  decodeMsgPack,
+  finishBinaryAssembly,
+  isPlaceholder,
+  parseSocketIoTextFrame,
+} from './po-binary.js';
 
 export interface PocketWsConfig {
   wsUrl: string;
@@ -33,6 +39,8 @@ export class PocketWsClient {
   private activeSymbol: string | null = null;
   private lastFocusSymbol: string | null = null;
   private pendingStream = false;
+  private pendingBinary: { attachmentCount: number; payload: unknown[]; received: Buffer[] } | null =
+    null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private stopped = false;
@@ -133,7 +141,14 @@ export class PocketWsClient {
 
     this.ws.on('open', () => {
       this.reconnectAttempt = 0;
-      this.status('WebSocket open');
+      this.connected = false;
+      this.status('WebSocket open — waiting for PO handshake');
+      // Fallback: some edges stall before 0{ — nudge Socket.IO connect.
+      setTimeout(() => {
+        if (!this.stopped && this.ws?.readyState === WebSocket.OPEN && !this.connected) {
+          this.ws.send('40');
+        }
+      }, 800);
     });
 
     this.ws.on('message', (raw) => this.handleMessage(raw));
@@ -170,9 +185,117 @@ export class PocketWsClient {
     this.cfg.onStatus?.(msg);
   }
 
-  private handleMessage(raw: WebSocket.RawData): void {
-    const text = typeof raw === 'string' ? raw : raw.toString('utf8');
+  private applyUpdateAssets(data: unknown): void {
+    const parsed = parseUpdateAssetsPayload(data);
+    const now = Date.now();
+    for (const a of parsed) {
+      const prev = this.assets.get(a.symbol);
+      if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
+      const catalog = a.lastKnownPrice ?? a.price;
+      const lkp = catalog ?? prev?.lastKnownPrice ?? prev?.price;
+      const livePrice =
+        typeof a.price === 'number'
+          ? a.price
+          : typeof catalog === 'number'
+            ? catalog
+            : prev?.price;
+      this.assets.set(a.symbol, {
+        ...prev,
+        ...a,
+        lastKnownPrice: lkp ?? prev?.lastKnownPrice,
+        price: livePrice ?? lkp ?? prev?.price,
+        timestamp: now,
+      });
+    }
+    if (parsed.length) this.status(`updateAssets: ${parsed.length} pairs`);
+  }
 
+  private applyUpdateStream(data: unknown): void {
+    const tick = parseUpdateStreamTick(data);
+    if (tick?.price == null) return;
+    const sym = tick.symbol ?? this.activeSymbol;
+    if (!sym) return;
+    this.activeSymbol = sym;
+    const prev = this.assets.get(sym);
+    if (prev) {
+      this.assets.set(sym, {
+        ...prev,
+        price: tick.price,
+        lastKnownPrice: tick.price,
+        timestamp: Date.now(),
+        live: true,
+      });
+    }
+  }
+
+  private dispatchEvent(event: string, data: unknown): void {
+    const ev = event.toLowerCase();
+    if (ev === 'successauth' || ev === 'success') {
+      this.connected = true;
+      this.status('Authenticated — waiting for updateAssets');
+      return;
+    }
+    if (ev.includes('notauthorized') || ev.includes('authfail') || ev === 'disconnect') {
+      this.connected = false;
+      this.status(`Auth failed (${event}) — refresh PO_AUTH from PO Demo F12`);
+      return;
+    }
+    if (event === 'updateAssets' && data != null) {
+      this.applyUpdateAssets(data);
+      return;
+    }
+    if (event === 'updateStream') {
+      if (data != null && !isPlaceholder(data)) this.applyUpdateStream(data);
+      else this.pendingStream = true;
+      return;
+    }
+    if (event === 'changeSymbol' && data && typeof data === 'object' && 'asset' in data) {
+      this.activeSymbol = poSymbolToDisplay(String((data as { asset: string }).asset));
+    }
+  }
+
+  private tryFinishBinary(): void {
+    if (!this.pendingBinary) return;
+    if (this.pendingBinary.received.length < this.pendingBinary.attachmentCount) return;
+    const done = finishBinaryAssembly(this.pendingBinary.payload, this.pendingBinary.received);
+    this.pendingBinary = null;
+    if (done) this.dispatchEvent(done.event, done.data);
+  }
+
+  private handleBinaryChunk(buf: Buffer): void {
+    if (this.pendingBinary) {
+      this.pendingBinary.received.push(buf);
+      this.tryFinishBinary();
+      return;
+    }
+    if (this.pendingStream) {
+      this.pendingStream = false;
+      try {
+        this.applyUpdateStream(decodeMsgPack(buf));
+      } catch {
+        try {
+          this.applyUpdateStream(JSON.parse(buf.toString('utf8')));
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    try {
+      this.applyUpdateStream(decodeMsgPack(buf));
+    } catch {
+      /* orphan binary */
+    }
+  }
+
+  private looksLikeSocketIoText(buf: Buffer): boolean {
+    if (buf.length === 0) return true;
+    const c = buf[0];
+    // Socket.IO text: 0{…}, 2, 3, 40{…}, 42[…], 451-[…]
+    return c === 0x30 || c === 0x32 || c === 0x33 || c === 0x34 || (c >= 0x35 && c <= 0x39);
+  }
+
+  private handleText(text: string): void {
     if (text === '2') {
       this.ws?.send('3');
       return;
@@ -182,26 +305,35 @@ export class PocketWsClient {
       return;
     }
     if (text.startsWith('40{')) {
+      this.status('Sending auth…');
       this.ws?.send(this.cfg.authMessage);
+      return;
+    }
+
+    if (text.includes('NotAuthorized') || text.includes('notAuthorized')) {
+      this.connected = false;
+      this.status('Auth rejected — refresh PO_AUTH from Demo F12');
+      return;
+    }
+
+    const frame = parseSocketIoTextFrame(text);
+    if (frame?.pendingBinary) {
+      this.pendingBinary = frame.pendingBinary;
+      this.tryFinishBinary();
+      return;
+    }
+    if (frame) {
+      this.dispatchEvent(frame.event, frame.data);
       return;
     }
 
     if (this.pendingStream) {
       this.pendingStream = false;
       try {
-        const data = JSON.parse(text);
-        const tick = parseUpdateStreamTick(data);
-        if (tick?.price != null) {
-          const sym = tick.symbol ?? this.activeSymbol;
-          if (sym) {
-            this.activeSymbol = sym;
-            const prev = this.assets.get(sym);
-            if (prev) {
-              this.assets.set(sym, { ...prev, price: tick.price, timestamp: Date.now(), live: true });
-            }
-          }
-        }
-      } catch { /* ignore */ }
+        this.applyUpdateStream(JSON.parse(text));
+      } catch {
+        /* ignore */
+      }
       return;
     }
 
@@ -214,54 +346,33 @@ export class PocketWsClient {
       try {
         const arr = JSON.parse(chunk);
         if (!Array.isArray(arr) || arr.length < 1) continue;
-
-        if (arr[0] === 'successauth') {
-          this.connected = true;
-          this.status('Authenticated — waiting for updateAssets');
-          continue;
-        }
-
-        if (arr[0] === 'updateAssets' && arr[1]) {
-          const parsed = parseUpdateAssetsPayload(arr[1]);
-          for (const a of parsed) {
-            const prev = this.assets.get(a.symbol);
-            if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
-            const lkp = a.lastKnownPrice ?? a.price ?? prev?.lastKnownPrice ?? prev?.price;
-            this.assets.set(a.symbol, {
-              ...prev,
-              ...a,
-              lastKnownPrice: lkp ?? prev?.lastKnownPrice,
-              price: prev?.price ?? a.price ?? lkp,
-              timestamp: Date.now(),
-            });
-          }
-          this.status(`updateAssets: ${parsed.length} pairs`);
-          continue;
-        }
-
-        if (arr[0] === 'updateStream') {
-          if (arr[1] != null) {
-            const inline = parseUpdateStreamTick(arr[1]);
-            if (inline?.price != null) {
-              const sym = inline.symbol ?? this.activeSymbol;
-              if (sym) {
-                this.activeSymbol = sym;
-                const prev = this.assets.get(sym);
-                if (prev) {
-                  this.assets.set(sym, { ...prev, price: inline.price, timestamp: Date.now() });
-                }
-              }
-            }
-          }
-          this.pendingStream = true;
-          continue;
-        }
-
-        if (arr[0] === 'changeSymbol' && arr[1]?.asset) {
-          this.activeSymbol = poSymbolToDisplay(String(arr[1].asset));
-          continue;
-        }
-      } catch { /* try next chunk */ }
+        this.dispatchEvent(String(arr[0]), arr[1]);
+      } catch {
+        /* try next chunk */
+      }
     }
+  }
+
+  private handleMessage(raw: WebSocket.RawData): void {
+    if (Buffer.isBuffer(raw)) {
+      // Node `ws` delivers TEXT frames as Buffer too — must not treat as binary.
+      if (this.looksLikeSocketIoText(raw)) {
+        this.handleText(raw.toString('utf8'));
+        return;
+      }
+      this.handleBinaryChunk(raw);
+      return;
+    }
+    if (raw instanceof ArrayBuffer) {
+      const buf = Buffer.from(raw);
+      if (this.looksLikeSocketIoText(buf)) {
+        this.handleText(buf.toString('utf8'));
+        return;
+      }
+      this.handleBinaryChunk(buf);
+      return;
+    }
+
+    this.handleText(String(raw));
   }
 }

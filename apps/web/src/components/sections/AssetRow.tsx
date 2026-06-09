@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import type { Asset } from '../../types';
-import { useCatalogPricePulse } from '../../hooks/useCatalogPricePulse';
+import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
 import { formatPercentChange } from '../../utils/format';
 import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
@@ -23,11 +23,15 @@ function AssetRow({
   onToggleFavorite,
 }: AssetRowProps) {
   const rawAnchor = a.lastKnownPrice ?? a.price;
-  const anchor =
-    rawAnchor != null && isPlausibleAssetPrice(rawAnchor, a.symbol) ? rawAnchor : null;
-  const livePrice =
-    a.price != null && isPlausibleAssetPrice(a.price, a.symbol) ? a.price : null;
-  const displayPrice = useCatalogPricePulse(a.symbol, anchor, livePrice);
+  const seedPrice =
+    a.price != null && isPlausibleAssetPrice(a.price, a.symbol)
+      ? a.price
+      : rawAnchor != null && isPlausibleAssetPrice(rawAnchor, a.symbol)
+        ? rawAnchor
+        : null;
+  const { price: tickPrice, payout: tickPayout } = useAssetTickPrice(a.symbol, seedPrice, a.payout);
+  const displayPrice = tickPrice;
+  const displayPayout = tickPayout;
 
   return (
     <motion.button
@@ -60,7 +64,7 @@ function AssetRow({
           ) : (
             <p className="text-[10px] text-slate-600">{priceOnSignalStart}</p>
           )}
-          <p className="text-xs font-bold text-prime-gold">{a.payout}%</p>
+          <p className="text-xs font-bold text-prime-gold">{displayPayout}%</p>
           {displayPrice != null && (
             <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
               {formatPercentChange(a.change)}

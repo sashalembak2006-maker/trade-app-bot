@@ -5,6 +5,7 @@ import adminRoutes from './routes/admin.js';
 import bridgeRoutes from './routes/bridge.js';
 import collectorRoutes from './routes/collector.js';
 import botAdminRoutes from './routes/bot-admin.js';
+import ticksRoutes from './routes/ticks.js';
 import { getMarketStatus, getMarketMode, setMarketMode, isRuntimeModeSwitchAllowed } from './market.js';
 import { getBridgeMonitorSnapshot } from './services/bridge-status.js';
 import { log } from './logger.js';
@@ -46,6 +47,7 @@ router.post('/market/mode', (req, res) => {
 router.use('/bridge', bridgeRoutes);
 router.use('/collector', collectorRoutes);
 router.use('/bot-admin', botAdminRoutes);
+router.use('/', ticksRoutes);
 router.use('/', userRoutes);
 router.use('/admin', adminRoutes);
 

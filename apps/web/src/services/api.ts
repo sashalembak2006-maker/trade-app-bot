@@ -159,6 +159,14 @@ export const api = {
       `/api/assets/${encodeURIComponent(symbol)}/price?waitMs=${waitMs}`,
       { timeoutMs: 8000 },
     ),
+  getTicks: (asset: string, since = 0) =>
+    fetchJson<{
+      asset: string;
+      ticks: { price: number; ts: number; live?: boolean }[];
+      latest: number | null;
+      payout: number | null;
+      live: boolean;
+    }>(`/api/ticks?asset=${encodeURIComponent(asset)}&since=${since}`, { timeoutMs: 3000 }),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
   generateSignal: (body: Record<string, unknown>) =>
     fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 48000 }),

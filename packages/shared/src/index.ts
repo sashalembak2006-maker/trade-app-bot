@@ -13,6 +13,7 @@ export * from './market/mock-data.js';
 export * from './market/pocket-assets.js';
 export * from './market/asset-flags.js';
 export * from './market/asset-category.js';
+export * from './market/tick-store.js';
 export * from './signal/engine.js';
 export * from './signal/indicators.js';
 export * from './data/content.js';
