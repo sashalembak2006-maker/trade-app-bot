@@ -1,38 +1,14 @@
 #!/bin/bash
-# МИТТЄВО заповнює всі OTC пари на проді — БЕЗ деплою (2 сек)
+# ЗАБОРОНЕНО — цей скрипт підставляв фейкові ціни. Використовуй СКИНУТИ_ФЕЙК.command + ДЕПЛОЙ.command
 cd "$(dirname "$0")"
 clear
 echo ""
-echo "▶ PRIME TRADE — миттєвий seed пар на Railway"
+echo "✗ SEED_ЗАРАЗ.command ВИМКНЕНО"
 echo ""
-
-node --input-type=module <<'EOF'
-import { pocketForexOtcBridgeCatalog } from './packages/shared/dist/market/pocket-assets.js';
-
-const assets = pocketForexOtcBridgeCatalog();
-const res = await fetch('https://prime-trade-production.up.railway.app/api/bridge/assets/update', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'x-bridge-secret': '9a26f2c606a207f3d98a74e99ab588c0957ae68ffeb5',
-  },
-  body: JSON.stringify({
-    source: 'emergency-seed',
-    assets,
-    activeSymbol: 'EUR/USD OTC',
-  }),
-});
-const body = await res.json().catch(() => ({}));
-console.log('HTTP', res.status, JSON.stringify(body));
-console.log('Пар відправлено:', assets.length);
-if (res.ok) {
-  console.log('');
-  console.log('✓ ГОТОВО — відкрий Mini App в Telegram зараз');
-} else {
-  console.log('');
-  console.log('✗ Помилка — перевір інтернет');
-}
-EOF
-
+echo "  Він заповнював Mini App фейковими цінами, які не збігаються з Pocket Option."
+echo ""
+echo "  Замість цього:"
+echo "    1) СКИНУТИ_ФЕЙК.command  — очистити старі фейкові дані"
+echo "    2) ДЕПЛОЙ.command        — задеплоїти чесний код (1.5.2-honest)"
 echo ""
 read -p "Enter..."

@@ -4,7 +4,6 @@ import {
   parseUpdateAssetsPayload,
   parseUpdateStreamTick,
   poSymbolToDisplay,
-  pocketForexOtcBridgeCatalog,
   type BridgeAssetInput,
 } from '@trade-app/shared';
 
@@ -77,7 +76,6 @@ export class PocketSioClient {
   private lastMessage = 'initializing';
   private hostIndex = 0;
   private scanIndex = 0;
-  private seeded = false;
   private authPayload: Record<string, unknown> | null;
   private hostList: string[] = [];
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -230,7 +228,14 @@ export class PocketSioClient {
     this.pingTimer = setInterval(() => {
       this.socket?.emit('ps');
     }, 60_000);
-    setTimeout(() => this.ensureCatalog(), 5000);
+    setTimeout(() => this.retryBootstrapIfEmpty(), 5000);
+  }
+
+  /** PO sometimes sends updateAssets late — re-bootstrap once, never fake catalog. */
+  private retryBootstrapIfEmpty(): void {
+    if (this.assets.size > 0 || !this.connected) return;
+    this.bootstrapAfterAuth();
+    this.status('Waiting for PO updateAssets (no fake prices)');
   }
 
   private bootstrapAfterAuth(): void {
@@ -245,26 +250,6 @@ export class PocketSioClient {
     s.emit('subfor', asset);
     this.activeSymbol = 'EUR/USD OTC';
     this.status('Authenticated + PO bootstrap');
-  }
-
-  private ensureCatalog(): void {
-    if (this.assets.size > 0) return;
-    this.seedCatalog();
-    setTimeout(() => {
-      if (this.assets.size > 0 && this.connected) this.bootstrapAfterAuth();
-    }, 8000);
-  }
-
-  private seedCatalog(): void {
-    if (this.seeded && this.assets.size > 0) return;
-    const catalog = pocketForexOtcBridgeCatalog();
-    for (const a of catalog) {
-      const prev = this.assets.get(a.symbol);
-      if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
-      this.assets.set(a.symbol, { ...prev, ...a });
-    }
-    this.seeded = true;
-    this.status(`Catalog seed: ${catalog.length} OTC pairs (live stream updating)`);
   }
 
   private noteEvent(event: string): void {

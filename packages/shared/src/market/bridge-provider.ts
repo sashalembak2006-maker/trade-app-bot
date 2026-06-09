@@ -524,6 +524,15 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   clear(): void {
     this.assets.clear();
     this.lastUpdate = 0;
+    this.usingSynthetic = false;
+    if (this.syntheticTimer) {
+      clearInterval(this.syntheticTimer);
+      this.syntheticTimer = null;
+    }
+    if (this.anchoredPulseTimer) {
+      clearInterval(this.anchoredPulseTimer);
+      this.anchoredPulseTimer = null;
+    }
   }
 
   rows(): MarketDataRow[] {

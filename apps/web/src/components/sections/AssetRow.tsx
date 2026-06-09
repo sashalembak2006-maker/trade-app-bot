@@ -2,7 +2,6 @@ import { motion } from 'framer-motion';
 import type { Asset } from '../../types';
 import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
 import { formatPercentChange } from '../../utils/format';
-import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
 
 interface AssetRowProps {
@@ -22,16 +21,7 @@ function AssetRow({
   onSelect,
   onToggleFavorite,
 }: AssetRowProps) {
-  const rawAnchor = a.lastKnownPrice ?? a.price;
-  const seedPrice =
-    a.price != null && isPlausibleAssetPrice(a.price, a.symbol)
-      ? a.price
-      : rawAnchor != null && isPlausibleAssetPrice(rawAnchor, a.symbol)
-        ? rawAnchor
-        : null;
-  const { price: tickPrice, payout: tickPayout } = useAssetTickPrice(a.symbol, seedPrice, a.payout);
-  const displayPrice = tickPrice;
-  const displayPayout = tickPayout;
+  const { price: displayPrice, payout: displayPayout, live } = useAssetTickPrice(a.symbol, a.payout);
 
   return (
     <motion.button
@@ -54,9 +44,9 @@ function AssetRow({
         <div className="text-right">
           {displayPrice != null ? (
             <motion.p
-              key={Math.round(displayPrice * 100_000)}
-              initial={{ opacity: 0.85, y: -1 }}
-              animate={{ opacity: 1, y: 0 }}
+              key={live ? Math.round(displayPrice * 100_000) : displayPrice}
+              initial={live ? { opacity: 0.85, y: -1 } : false}
+              animate={live ? { opacity: 1, y: 0 } : undefined}
               className="font-display text-sm font-semibold tracking-wide text-prime-gold-light"
             >
               {displayPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
@@ -65,7 +55,7 @@ function AssetRow({
             <p className="text-[10px] text-slate-600">{priceOnSignalStart}</p>
           )}
           <p className="text-xs font-bold text-prime-gold">{displayPayout}%</p>
-          {displayPrice != null && (
+          {live && displayPrice != null && (
             <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
               {formatPercentChange(a.change)}
             </p>

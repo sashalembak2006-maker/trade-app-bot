@@ -8,6 +8,42 @@ export function getTickStore(): MarketTickStore {
   return store;
 }
 
-export function recordBridgeTicks(assets: BridgeAssetInput[], activeSymbol?: string | null): void {
-  getTickStore().ingestBatch(assets, activeSymbol);
+export function clearTickStore(): void {
+  getTickStore().clear();
+}
+
+const TRUSTED_PO_SOURCES = new Set(['vps-collector', 'bridge-extension', 'platform-bridge']);
+
+export function recordBridgeTicks(
+  assets: BridgeAssetInput[],
+  activeSymbol?: string | null,
+  source?: string,
+): void {
+  if (source && !TRUSTED_PO_SOURCES.has(source)) return;
+  const tickStore = getTickStore();
+  const now = Date.now();
+  for (const a of assets) {
+    if (!a.symbol) continue;
+    if (a.live === true && typeof a.price === 'number') {
+      tickStore.record(a.symbol, a.price, a.timestamp ?? now, { payout: a.payout, live: true });
+      continue;
+    }
+    const catalog =
+      typeof a.price === 'number'
+        ? a.price
+        : typeof a.lastKnownPrice === 'number'
+          ? a.lastKnownPrice
+          : null;
+    if (catalog != null) {
+      tickStore.setCatalogPrice(a.symbol, catalog, a.timestamp ?? now, a.payout);
+    } else if (typeof a.payout === 'number') {
+      const prev = tickStore.query(a.symbol, 0);
+      if (prev.latest != null) {
+        tickStore.record(a.symbol, prev.latest, now, { payout: a.payout });
+      } else if (prev.catalog != null) {
+        tickStore.setCatalogPrice(a.symbol, prev.catalog, now, a.payout);
+      }
+    }
+  }
+  void activeSymbol;
 }

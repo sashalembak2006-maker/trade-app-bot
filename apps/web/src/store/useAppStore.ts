@@ -90,16 +90,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         assets: incoming.map((a) => {
           const prev = prevBySym.get(a.symbol);
-          let price = a.price != null && isPlausiblePrice(a.price) ? a.price : null;
-          let lastKnownPrice =
+          const price = a.price != null && isPlausiblePrice(a.price) ? a.price : null;
+          const lastKnownPrice =
             a.lastKnownPrice != null && isPlausiblePrice(a.lastKnownPrice) ? a.lastKnownPrice : null;
-          if (price == null && prev?.price != null) price = prev.price;
-          if (lastKnownPrice == null && prev?.lastKnownPrice != null) lastKnownPrice = prev.lastKnownPrice;
-          let change = Number.isFinite(a.change) ? a.change : (prev?.change ?? 0);
-          const basis = prev?.price ?? prev?.lastKnownPrice;
-          if (price != null && basis != null && basis > 0 && price !== basis) {
-            change = Math.round(((price - basis) / basis) * 100 * 100) / 100;
-          }
+          const change = Number.isFinite(a.change) ? a.change : (prev?.change ?? 0);
           return {
             ...a,
             price,

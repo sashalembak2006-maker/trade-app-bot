@@ -15,17 +15,12 @@ import { setBridgeSyntheticFallback, setBridgeAnchoredPulse } from '@trade-app/s
 import { getMarketStatus } from './market.js';
 import { startBridgeMonitor } from './services/bridge-status.js';
 
-/** Hybrid micro-ticks for all OTC pairs — always on in platform-bridge mode. */
+/** Real PO prices only — never synthetic micro-ticks unless explicitly enabled. */
 const isPlatformBridge = process.env.MARKET_DATA_MODE?.trim() === 'platform';
-const syntheticFallback =
-  isPlatformBridge || process.env.PLATFORM_SYNTHETIC_FALLBACK !== 'false';
+const syntheticFallback = process.env.PLATFORM_SYNTHETIC_FALLBACK === 'true';
 setBridgeSyntheticFallback(syntheticFallback);
 
-const anchoredPulse =
-  process.env.BRIDGE_ANCHORED_PULSE === 'true' ||
-  (process.env.BRIDGE_ANCHORED_PULSE !== 'false' &&
-    process.env.NODE_ENV === 'production' &&
-    !syntheticFallback);
+const anchoredPulse = process.env.BRIDGE_ANCHORED_PULSE === 'true';
 setBridgeAnchoredPulse(anchoredPulse);
 
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 3001);

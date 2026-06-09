@@ -37,7 +37,8 @@ if ! $CLI link -p "$PROJECT" -s "$SERVICE" -e production 2>/dev/null; then
 fi
 
 echo "→ Вмикаємо hybrid ціни + тимчасовий доступ (OPEN_ACCESS)..."
-$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=true" --service "$SERVICE"
+$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=false" --service "$SERVICE"
+$CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service "$SERVICE"
 $CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service "$SERVICE"
 $CLI variables set "OPEN_ACCESS=true" --service "$SERVICE"
 $CLI variables set "SIGNAL_PRICE_WAIT_MS=4000" --service "$SERVICE"

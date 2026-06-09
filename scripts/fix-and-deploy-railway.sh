@@ -21,7 +21,8 @@ echo "→ Set production vars on prime-trade"
 $CLI variables set "BRIDGE_SECRETS=${BRIDGE_SECRETS}" --service prime-trade
 $CLI variables set "MARKET_DATA_MODE=platform" --service prime-trade
 $CLI variables set "WEBAPP_URL=https://prime-trade-production.up.railway.app" --service prime-trade
-$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=true" --service prime-trade
+$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=false" --service prime-trade
+$CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service prime-trade
 $CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service prime-trade
 
 echo "→ Deploy prime-trade"

@@ -32,7 +32,8 @@ echo "→ Variables..."
 $CLI variables set "PO_WS_URL=wss://api-eu.po.market/socket.io/?EIO=4&transport=websocket" --service prime-trade
 $CLI variables set "PO_AUTH_MESSAGE_B64=$B64" --service prime-trade
 $CLI variables set "MARKET_DATA_MODE=platform" --service prime-trade
-$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=true" --service prime-trade
+$CLI variables set "PLATFORM_SYNTHETIC_FALLBACK=false" --service prime-trade
+$CLI variables set "BRIDGE_ANCHORED_PULSE=false" --service prime-trade
 
 echo "→ BUILD нового коду (5-7 хв)..."
 $CLI up --detach --service prime-trade
@@ -40,7 +41,7 @@ $CLI up --detach --service prime-trade
 echo ""
 echo "SUCCESS: білд запущено"
 echo ""
-echo "Чекаю version 1.5.0-full..."
+echo "Чекаю version 1.5.2-honest..."
 for i in $(seq 1 20); do
   sleep 20
   STATUS=$(curl -sf "https://prime-trade-production.up.railway.app/api/collector/status" 2>/dev/null || echo "")
@@ -48,7 +49,7 @@ for i in $(seq 1 20); do
     VER=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
     ASSETS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
     echo "  [$i/20] version=$VER assetCount=$ASSETS"
-    if [ "$VER" = "1.5.0-full" ] || [ "$VER" = "1.4.2-events" ]; then
+    if [ "$VER" = "1.5.2-honest" ]; then
       echo ""
       echo "✓ НОВИЙ КОД НА ПРОДІ!"
       exit 0

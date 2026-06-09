@@ -1,21 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 
-/** Poll /api/ticks?since= — creator-style live price per pair. */
+/** Poll /api/ticks — only show prices confirmed from Pocket Option (live stream or PO catalog). */
 export function useAssetTickPrice(
   symbol: string,
-  seedPrice: number | null,
   seedPayout: number,
-): { price: number | null; payout: number } {
-  const [price, setPrice] = useState<number | null>(seedPrice);
+): { price: number | null; payout: number; live: boolean } {
+  const [price, setPrice] = useState<number | null>(null);
   const [payout, setPayout] = useState(seedPayout);
+  const [live, setLive] = useState(false);
   const sinceRef = useRef(0);
 
   useEffect(() => {
     sinceRef.current = 0;
-    setPrice(seedPrice);
+    setPrice(null);
+    setLive(false);
     setPayout(seedPayout);
-  }, [symbol, seedPrice, seedPayout]);
+  }, [symbol, seedPayout]);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,25 +26,33 @@ export function useAssetTickPrice(
         const data = await api.getTicks(symbol, sinceRef.current);
         if (cancelled) return;
         if (data.payout != null) setPayout(data.payout);
-        if (data.ticks.length > 0) {
-          const last = data.ticks[data.ticks.length - 1]!;
-          sinceRef.current = last.ts;
-          setPrice(last.price);
-        } else if (data.latest != null) {
+        if (data.live && data.latest != null) {
+          setLive(true);
           setPrice(data.latest);
+          if (data.ticks.length > 0) {
+            sinceRef.current = data.ticks[data.ticks.length - 1]!.ts;
+          }
+          return;
         }
+        if (data.catalog != null) {
+          setLive(false);
+          setPrice(data.catalog);
+          return;
+        }
+        setLive(false);
+        setPrice(null);
       } catch {
-        /* keep last price */
+        /* keep last known PO price */
       }
     };
 
     void poll();
-    const id = setInterval(poll, 200);
+    const id = setInterval(poll, 400);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, [symbol]);
 
-  return { price, payout };
+  return { price, payout, live };
 }

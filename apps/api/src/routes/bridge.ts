@@ -3,7 +3,7 @@ import type { BridgeAssetInput } from '@trade-app/shared';
 import { getBridgeProvider, getMarketMode, setMarketMode } from '../market.js';
 import { getFocus } from '../services/focus.js';
 import { onBridgeIngest } from '../services/bridge-status.js';
-import { recordBridgeTicks } from '../services/market-ticks.js';
+import { recordBridgeTicks, clearTickStore } from '../services/market-ticks.js';
 import { isBridgeSecretConfigured, isBridgeSecretValid } from '../services/bridge-auth.js';
 import { log } from '../logger.js';
 
@@ -21,6 +21,12 @@ router.post('/assets/update', (req, res) => {
     if (!isBridgeSecretValid(req.headers['x-bridge-secret'])) {
       log.warn('Bridge update rejected: bad secret');
       return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const source = typeof req.body?.source === 'string' ? req.body.source.trim() : '';
+    if (source === 'emergency-seed' || source === 'catalog-seed') {
+      log.warn('Rejected non-PO seed ingest', { source });
+      return res.status(400).json({ error: 'Only live Pocket Option data allowed' });
     }
 
     const assets = Array.isArray(req.body?.assets) ? (req.body.assets as BridgeAssetInput[]) : [];
@@ -44,13 +50,26 @@ router.post('/assets/update', (req, res) => {
       log.info('Bridge connected — switched market mode to platform');
     }
     if (accepted > 0) onBridgeIngest(accepted);
-    if (accepted > 0) recordBridgeTicks(assets, activeSymbol);
+    if (accepted > 0) recordBridgeTicks(assets, activeSymbol, source);
     log.debug('Bridge data ingested', { accepted, source: req.body?.source, assetCount: assets.length });
     return res.json({ ok: true, accepted, status: bridge.status });
   } catch (err) {
     log.error('Bridge ingest failed', err instanceof Error ? err.message : err);
     return res.status(500).json({ error: 'Bridge ingest failed', code: 'BRIDGE_INGEST_ERROR' });
   }
+});
+
+router.post('/reset', (req, res) => {
+  if (!isBridgeSecretConfigured()) {
+    return res.status(503).json({ error: 'BRIDGE_SECRET not configured on server' });
+  }
+  if (!isBridgeSecretValid(req.headers['x-bridge-secret'])) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  getBridgeProvider().clear();
+  clearTickStore();
+  log.info('Bridge + tick store cleared (fake seed removed)');
+  return res.json({ ok: true });
 });
 
 router.get('/status', (_req, res) => {

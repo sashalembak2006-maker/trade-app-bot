@@ -12,6 +12,8 @@ export interface TickQueryResult {
   latest: number | null;
   payout: number | null;
   live: boolean;
+  /** PO catalog snapshot (updateAssets) — real but not streaming. */
+  catalog: number | null;
 }
 
 const MAX_TICKS_PER_SYMBOL = 400;
@@ -30,7 +32,25 @@ export class MarketTickStore {
   private ticks = new Map<string, MarketTick[]>();
   private lastPrice = new Map<string, number>();
   private payout = new Map<string, number>();
+  private catalogPrice = new Map<string, number>();
+  private catalogAt = new Map<string, number>();
   private liveAt = new Map<string, number>();
+
+  clear(): void {
+    this.ticks.clear();
+    this.lastPrice.clear();
+    this.payout.clear();
+    this.catalogPrice.clear();
+    this.catalogAt.clear();
+    this.liveAt.clear();
+  }
+
+  setCatalogPrice(symbol: string, price: number, ts: number, payout?: number): void {
+    if (!symbol || !Number.isFinite(price) || price <= 0) return;
+    this.catalogPrice.set(symbol, price);
+    this.catalogAt.set(symbol, ts);
+    if (payout != null) this.payout.set(symbol, payout);
+  }
 
   record(
     symbol: string,
@@ -93,12 +113,16 @@ export class MarketTickStore {
     const ticks = cutoff > 0 ? list.filter((t) => t.ts > cutoff) : list.slice(-1);
     const latest = this.lastPrice.get(symbol) ?? null;
     const liveAt = this.liveAt.get(symbol) ?? 0;
+    const cat = this.catalogPrice.get(symbol) ?? null;
+    const catAt = this.catalogAt.get(symbol) ?? 0;
+    const isLive = liveAt > 0 && Date.now() - liveAt < 5000;
     return {
       asset: symbol,
       ticks,
-      latest,
+      latest: isLive ? (this.lastPrice.get(symbol) ?? null) : null,
       payout: this.payout.get(symbol) ?? null,
-      live: liveAt > 0 && Date.now() - liveAt < 5000,
+      live: isLive,
+      catalog: catAt > 0 && Date.now() - catAt < 120_000 ? cat : null,
     };
   }
 
