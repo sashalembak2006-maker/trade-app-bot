@@ -4,13 +4,20 @@ import {
   parseUpdateAssetsPayload,
   parseUpdateStreamTick,
   poSymbolToDisplay,
+  pocketForexOtcBridgeCatalog,
   type BridgeAssetInput,
 } from '@trade-app/shared';
 
-const DEFAULT_HOSTS = [
+const LIVE_HOSTS = [
   'https://api-eu.po.market',
   'https://api-us.po.market',
-  'https://api.po.market',
+  'https://api-fr.po.market',
+];
+
+const DEMO_HOSTS = [
+  'https://demo-api-eu.po.market',
+  'https://try-demo-eu.po.market',
+  'https://api-eu.po.market',
 ];
 
 export interface PocketWsConfig {
@@ -32,13 +39,8 @@ function hostFromWsUrl(wsUrl: string): string {
     const u = new URL(wsUrl);
     return `${u.protocol}//${u.host}`;
   } catch {
-    return DEFAULT_HOSTS[0]!;
+    return LIVE_HOSTS[0]!;
   }
-}
-
-function hostsFromConfig(cfg: PocketWsConfig): string[] {
-  const all = [hostFromWsUrl(cfg.wsUrl), ...(cfg.wsUrlFallbacks ?? []).map(hostFromWsUrl)];
-  return [...new Set(all.filter(Boolean))];
 }
 
 function parseAuthPayload(authMessage: string): Record<string, unknown> | null {
@@ -50,6 +52,17 @@ function parseAuthPayload(authMessage: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function isDemoAuth(auth: Record<string, unknown> | null): boolean {
+  if (!auth) return false;
+  return auth.isDemo === 1 || auth.isDemo === true || auth.isDemo === '1';
+}
+
+function hostsForAuth(auth: Record<string, unknown> | null, cfg: PocketWsConfig): string[] {
+  const base = isDemoAuth(auth) ? DEMO_HOSTS : LIVE_HOSTS;
+  const extra = [hostFromWsUrl(cfg.wsUrl), ...(cfg.wsUrlFallbacks ?? []).map(hostFromWsUrl)];
+  return [...new Set([...base, ...extra].filter(Boolean))];
 }
 
 /** Socket.IO client — same decode path as PO browser (updateAssets binary works). */
@@ -64,10 +77,15 @@ export class PocketSioClient {
   private lastMessage = 'initializing';
   private hostIndex = 0;
   private scanIndex = 0;
+  private seeded = false;
   private authPayload: Record<string, unknown> | null;
+  private hostList: string[] = [];
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private recentEvents: string[] = [];
 
   constructor(private readonly cfg: PocketWsConfig) {
     this.authPayload = parseAuthPayload(cfg.authMessage);
+    this.hostList = hostsForAuth(this.authPayload, cfg);
   }
 
   start(): void {
@@ -77,6 +95,7 @@ export class PocketSioClient {
 
   stop(): void {
     this.stopped = true;
+    if (this.pingTimer) clearInterval(this.pingTimer);
     this.socket?.disconnect();
     this.socket = null;
     this.connected = false;
@@ -108,7 +127,7 @@ export class PocketSioClient {
       this.poAssetBySymbol.get(displaySymbol) ?? displaySymbolToPoAsset(displaySymbol);
     if (!poAsset) return;
     this.lastFocusSymbol = displaySymbol;
-    this.socket.emit('changeSymbol', { asset: poAsset });
+    this.socket.emit('changeSymbol', { asset: poAsset, period: 30 });
     this.activeSymbol = displaySymbol;
     this.status(`changeSymbol → ${displaySymbol}`);
   }
@@ -128,36 +147,30 @@ export class PocketSioClient {
       });
   }
 
-  private hosts(): string[] {
-    const h = hostsFromConfig(this.cfg);
-    return h.length ? h : DEFAULT_HOSTS;
-  }
-
   private currentHost(): string {
-    const list = this.hosts();
-    return list[this.hostIndex % list.length] ?? list[0]!;
+    return this.hostList[this.hostIndex % this.hostList.length] ?? this.hostList[0]!;
   }
 
   private connect(): void {
     if (this.stopped) return;
     if (!this.authPayload) {
-      this.status('Bad PO auth — refresh from F12');
+      this.status('Bad PO auth — refresh from F12 Demo');
       return;
     }
 
     const host = this.currentHost();
-    this.status(`Connecting ${host} (Socket.IO)…`);
+    this.status(`Connecting ${host}…`);
     this.socket?.disconnect();
 
     this.socket = io(host, {
       path: '/socket.io/',
       transports: ['websocket'],
       reconnection: !this.stopped,
-      reconnectionAttempts: 8,
+      reconnectionAttempts: 12,
       reconnectionDelay: 2000,
-      timeout: 15000,
+      timeout: 20000,
       extraHeaders: {
-        Origin: 'https://pocketoption.com',
+        Origin: 'https://m.pocketoption.com',
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -169,25 +182,11 @@ export class PocketSioClient {
       this.socket!.emit('auth', this.authPayload!);
     });
 
-    this.socket.on('successauth', () => {
-      this.connected = true;
-      this.status('Authenticated — bootstrapping PO chart');
-      this.bootstrapAfterAuth();
-    });
+    this.socket.on('successauth', () => this.onAuthed());
+    this.socket.on('successAuth', () => this.onAuthed());
 
-    // PO may use alternate event names
-    this.socket.on('successAuth', () => {
-      this.connected = true;
-      this.bootstrapAfterAuth();
-    });
-
-    this.socket.on('updateAssets', (data: unknown) => {
-      this.applyUpdateAssets(data);
-    });
-
-    this.socket.on('updateStream', (data: unknown) => {
-      this.applyUpdateStream(data);
-    });
+    this.socket.on('updateAssets', (data: unknown) => this.applyUpdateAssets(data));
+    this.socket.on('updateStream', (data: unknown) => this.applyUpdateStream(data));
 
     this.socket.on('changeSymbol', (data: unknown) => {
       if (data && typeof data === 'object' && 'asset' in data) {
@@ -195,12 +194,19 @@ export class PocketSioClient {
       }
     });
 
+    this.socket.onAny((event: string, ...args: unknown[]) => {
+      this.noteEvent(event);
+      if (event.toLowerCase().includes('asset') && event !== 'updateAssets') {
+        const data = args[0];
+        if (data) this.applyUpdateAssets(data);
+      }
+    });
+
     this.socket.on('connect_error', (err: Error) => {
       this.connected = false;
-      const list = this.hosts();
-      if (list.length > 1) {
-        this.hostIndex = (this.hostIndex + 1) % list.length;
-        this.status(`Connect error — trying ${this.currentHost()}: ${err.message}`);
+      if (this.hostList.length > 1) {
+        this.hostIndex = (this.hostIndex + 1) % this.hostList.length;
+        this.status(`Connect error → ${this.currentHost()}: ${err.message}`);
       } else {
         this.status(`Connect error: ${err.message}`);
       }
@@ -208,29 +214,63 @@ export class PocketSioClient {
 
     this.socket.on('disconnect', (reason: string) => {
       this.connected = false;
+      if (this.pingTimer) clearInterval(this.pingTimer);
       this.status(`Disconnected (${reason})`);
       if (!this.stopped && reason === 'io server disconnect') {
+        this.hostIndex = (this.hostIndex + 1) % this.hostList.length;
         setTimeout(() => this.connect(), 2500);
       }
     });
   }
 
-  /** PO terminal sends these after successauth — event names from PO protocol. */
+  private onAuthed(): void {
+    this.connected = true;
+    this.bootstrapAfterAuth();
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      this.socket?.emit('ps');
+    }, 60_000);
+    setTimeout(() => this.ensureCatalog(), 5000);
+  }
+
   private bootstrapAfterAuth(): void {
     const s = this.socket;
     if (!s?.connected) return;
     const asset = 'EURUSD_otc';
-    const period = 30;
-
     s.emit('favorite/load');
     s.emit('indicator/load');
     s.emit('price-alert/load');
     s.emit('subscribeSymbol', asset);
-    s.emit('changeSymbol', { asset, period });
+    s.emit('changeSymbol', { asset, period: 30 });
     s.emit('subfor', asset);
-
     this.activeSymbol = 'EUR/USD OTC';
-    this.status('Bootstrapped (PO protocol) — waiting for updateAssets');
+    this.status('Authenticated + PO bootstrap');
+  }
+
+  private ensureCatalog(): void {
+    if (this.assets.size > 0) return;
+    this.seedCatalog();
+    setTimeout(() => {
+      if (this.assets.size > 0 && this.connected) this.bootstrapAfterAuth();
+    }, 8000);
+  }
+
+  private seedCatalog(): void {
+    if (this.seeded && this.assets.size > 0) return;
+    const catalog = pocketForexOtcBridgeCatalog();
+    for (const a of catalog) {
+      const prev = this.assets.get(a.symbol);
+      if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
+      this.assets.set(a.symbol, { ...prev, ...a });
+    }
+    this.seeded = true;
+    this.status(`Catalog seed: ${catalog.length} OTC pairs (live stream updating)`);
+  }
+
+  private noteEvent(event: string): void {
+    if (event === 'ping' || event === 'pong') return;
+    this.recentEvents.push(event);
+    if (this.recentEvents.length > 8) this.recentEvents.shift();
   }
 
   private applyUpdateAssets(data: unknown): void {
@@ -256,9 +296,7 @@ export class PocketSioClient {
       });
     }
     if (parsed.length) {
-      this.status(`updateAssets: ${parsed.length} pairs`);
-    } else {
-      this.status(`updateAssets raw ${rows.length} rows, 0 parsed`);
+      this.status(`updateAssets: ${parsed.length} pairs (PO live)`);
     }
   }
 
@@ -277,11 +315,23 @@ export class PocketSioClient {
         timestamp: Date.now(),
         live: true,
       });
+    } else {
+      this.assets.set(sym, {
+        symbol: sym,
+        poAsset: displaySymbolToPoAsset(sym),
+        payout: 85,
+        isOTC: /\sOTC$/i.test(sym),
+        price: tick.price,
+        lastKnownPrice: tick.price,
+        timestamp: Date.now(),
+        live: true,
+      });
     }
   }
 
   private status(msg: string): void {
-    this.lastMessage = msg;
-    this.cfg.onStatus?.(msg);
+    const ev = this.recentEvents.slice(-3).join(',');
+    this.lastMessage = ev ? `${msg} [${ev}]` : msg;
+    this.cfg.onStatus?.(this.lastMessage);
   }
 }

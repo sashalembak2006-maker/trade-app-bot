@@ -1,4 +1,7 @@
 import type { Asset } from '../types/index.js';
+import type { BridgeAssetInput } from '../types/index.js';
+import { displaySymbolToPoAsset } from './pocket-symbols.js';
+import { isForexOtcSymbol } from './price-validation.js';
 
 type PairDef = {
   base: string;
@@ -180,3 +183,19 @@ export const POCKET_ASSETS: Asset[] = [
   ...COMMODITIES,
   ...INDICES,
 ];
+
+/** Seed collector/bridge when PO delays updateAssets (forex OTC only). */
+export function pocketForexOtcBridgeCatalog(): BridgeAssetInput[] {
+  const now = Date.now();
+  return POCKET_ASSETS.filter((a) => a.category === 'forex_otc' && isForexOtcSymbol(a.symbol)).map(
+    (a) => ({
+      symbol: a.symbol,
+      poAsset: displaySymbolToPoAsset(a.symbol),
+      payout: a.payout,
+      isOTC: true,
+      lastKnownPrice: a.price,
+      price: a.price,
+      timestamp: now,
+    }),
+  );
+}

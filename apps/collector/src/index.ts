@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PocketSioClient } from './pocket-sio.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.4.2-events';
+const VERSION = '1.5.0-full';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
