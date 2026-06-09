@@ -15,7 +15,7 @@ import { log } from '../logger.js';
 import { notifyAdminsDepositRequest } from '../services/notify.js';
 import { resolveTelegramUser } from '../middleware/auth.js';
 import { serializeUser, hasAppAccess, hasVipAccess, hasLimitedAccess, hasSignalAccess } from '../middleware/access.js';
-import { livePriceFromTickStore, resolveLiveSignalPrice } from '../services/signal-price.js';
+import { livePriceFromTickStore, resolveSignalEntryPrice } from '../services/signal-price.js';
 
 const router = Router();
 const signalEngine = new SignalEngine();
@@ -329,33 +329,44 @@ router.post('/signals/generate', async (req, res) => {
   }
 
   const waitMs = Math.min(
-    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 2200, 800),
-    4000,
+    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 1800, 600),
+    3000,
   );
   if (getMarketMode() === 'platform') {
-    requestFocus(symbol, waitMs + 35_000);
+    requestFocus(symbol, waitMs + 45_000);
   }
 
   let price: number | null = null;
+  let priceSource: string | null = null;
   let payout: number;
   try {
     payout = await provider.getPayout(symbol);
 
     if (provider instanceof BridgeMarketDataProvider) {
-      price = resolveLiveSignalPrice(symbol, provider);
+      const resolved = resolveSignalEntryPrice(symbol, provider);
+      price = resolved.price;
+      priceSource = resolved.source;
+
       if (price == null) {
-        await sleep(Math.min(focusGraceMs(), 500));
-        price = resolveLiveSignalPrice(symbol, provider);
+        await sleep(Math.min(focusGraceMs(), 400));
+        const retry = resolveSignalEntryPrice(symbol, provider);
+        price = retry.price;
+        priceSource = retry.source;
       }
+
       if (price == null) {
+        log.info('Signal price wait (live refresh)', { symbol, waitMs });
         price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
+        priceSource = 'wait_live';
       }
     } else {
       price = await provider.getAssetPrice(symbol);
+      priceSource = 'provider';
     }
   } catch (e) {
     const code = (e as { code?: string }).code;
     clearFocus(symbol);
+    log.warn('Signal price resolution failed', { symbol, code, err: (e as Error).message });
     if (code === 'NO_PRICE') {
       return res.status(422).json({
         error: 'No live price for asset — open this pair on Pocket Option trading chart',
@@ -393,7 +404,14 @@ router.post('/signals/generate', async (req, res) => {
   }
 
   res.json(result);
-  log.info('Signal generated', { user: user.id, symbol, direction: result.direction, payout });
+  log.info('Signal generated', {
+    user: user.id,
+    symbol,
+    direction: result.direction,
+    payout,
+    priceSource,
+    entryPrice: result.entryPrice,
+  });
   void prisma.signalHistory
     .create({
       data: {

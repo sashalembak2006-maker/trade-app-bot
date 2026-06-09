@@ -41,11 +41,16 @@ export interface ApiError extends Error {
 
 const DEFAULT_TIMEOUT = 8000;
 
-async function fetchJson<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
+async function fetchJson<T>(
+  path: string,
+  options?: RequestInit & { timeoutMs?: number; signal?: AbortSignal },
+): Promise<T> {
   const url = `${getApiBase()}${path}`;
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  options?.signal?.addEventListener('abort', onExternalAbort);
 
   try {
     const res = await fetch(url, {
@@ -70,6 +75,7 @@ async function fetchJson<T>(path: string, options?: RequestInit & { timeoutMs?: 
     }
     throw e;
   } finally {
+    options?.signal?.removeEventListener('abort', onExternalAbort);
     clearTimeout(timer);
   }
 }
@@ -170,8 +176,13 @@ export const api = {
       display: number | null;
     }>(`/api/ticks?asset=${encodeURIComponent(asset)}&since=${since}`, { timeoutMs: 3000 }),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
-  generateSignal: (body: Record<string, unknown>) =>
-    fetchJson<SignalResult>('/api/signals/generate', { method: 'POST', body: JSON.stringify(body), timeoutMs: 48000 }),
+  generateSignal: (body: Record<string, unknown>, opts?: { signal?: AbortSignal; timeoutMs?: number }) =>
+    fetchJson<SignalResult>('/api/signals/generate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: opts?.timeoutMs ?? 45_000,
+      signal: opts?.signal,
+    }),
   calculate: (body: Record<string, unknown>) =>
     fetchJson<CalculatorResult>('/api/calculator', { method: 'POST', body: JSON.stringify(body) }),
   getNews: () => fetchJson<NewsItem[]>('/api/news', { timeoutMs: 6000 }),

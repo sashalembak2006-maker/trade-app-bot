@@ -17,10 +17,18 @@ import {
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 1200;
-const COVERAGE_ANALYSIS_MS = 800;
-const SIGNAL_REQUEST_TIMEOUT_MS = 22_000;
-const LOADING_WATCHDOG_MS = 28_000;
+const ANALYSIS_MIN_MS = 900;
+const COVERAGE_ANALYSIS_MS = 600;
+const SIGNAL_REQUEST_TIMEOUT_MS = 45_000;
+const LOADING_WATCHDOG_MS = 50_000;
+
+/** Cancel stale in-flight signal requests when user retries. */
+let activeSignalAbort: AbortController | null = null;
+
+function abortActiveSignalRequest(): void {
+  activeSignalAbort?.abort();
+  activeSignalAbort = null;
+}
 
 async function fetchPoEntryPrice(symbol: string): Promise<number> {
   const ticks = await api.getTicks(symbol, 0);
@@ -30,10 +38,6 @@ async function fetchPoEntryPrice(symbol: string): Promise<number> {
   throw Object.assign(new Error('NO_PRICE'), { code: 'NO_PRICE' });
 }
 
-/** Fire focus in background — never block signal on PO chart switch. */
-function requestBridgeFocus(symbol: string): void {
-  void api.requestFocus(symbol, 90_000).catch(() => {});
-}
 
 function formatPrice(price: number) {
   return price.toLocaleString('uk-UA', { maximumFractionDigits: 5 });
@@ -172,6 +176,10 @@ export function SignalModal() {
   const liveAsset =
     selectedAsset &&
     (assets.find((a) => a.symbol === selectedAsset.symbol) ?? selectedAsset);
+
+  useEffect(() => {
+    return () => abortActiveSignalRequest();
+  }, []);
 
   useEffect(() => {
     if (!selectedAsset) return;
@@ -329,6 +337,7 @@ export function SignalModal() {
   };
 
   const handleRetry = () => {
+    abortActiveSignalRequest();
     setSignalError(null);
     void handleGetSignal();
   };
@@ -355,26 +364,32 @@ export function SignalModal() {
     }
 
     hapticFeedback('medium');
+    abortActiveSignalRequest();
+    const abort = new AbortController();
+    activeSignalAbort = abort;
+
     setSignalError(null);
     setSignalResult(null);
     setSettlement(null);
     if (!opts?.keepMultiplier) setMartingaleMultiplier(1);
     settledRef.current = false;
-    useAppStore.setState({ signalCurrentPrice: null });
+    useAppStore.setState({ signalCurrentPrice: null, signalLockedEntryPrice: null });
     setSignalPhase('loading');
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'requesting', selectedAsset.symbol, selectedTimeframe);
 
-    const signalPromise = (async () => {
-      requestBridgeFocus(selectedAsset.symbol);
-      return api.generateSignal({
+    void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+
+    const signalPromise = api.generateSignal(
+      {
         assetId: selectedAsset.id,
         symbol: selectedAsset.symbol,
         timeframe: selectedTimeframe,
         isOTC: selectedAsset.isOTC,
-      });
-    })();
+      },
+      { signal: abort.signal, timeoutMs: SIGNAL_REQUEST_TIMEOUT_MS },
+    );
 
     const signalWithTimeout = Promise.race([
       signalPromise,
@@ -388,6 +403,7 @@ export function SignalModal() {
 
     try {
       const [result] = await Promise.all([signalWithTimeout, runAnalysisAnimation()]);
+      if (abort.signal.aborted) return;
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
@@ -395,6 +411,7 @@ export function SignalModal() {
       hapticSuccess();
       logger.info('Signal', 'received', result.direction, `${result.confidence}%`);
     } catch (e) {
+      if (abort.signal.aborted) return;
       const err = e as ApiError;
       logger.error('Signal', 'generation failed', err.code, err.message);
       const msg =
@@ -412,6 +429,8 @@ export function SignalModal() {
       setSignalError(msg);
       setSignalPhase('idle');
       hapticFeedback('heavy');
+    } finally {
+      if (activeSignalAbort === abort) activeSignalAbort = null;
     }
   };
 
@@ -731,7 +750,7 @@ export function SignalModal() {
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => resetSignalSession()}
+                  onClick={() => { abortActiveSignalRequest(); resetSignalSession(); }}
                   className="w-full rounded-2xl border border-white/10 py-4 text-sm font-semibold text-white hover:bg-white/5"
                 >
                   {t.newSignal}
