@@ -41,7 +41,7 @@ $CLI up --detach --service prime-trade
 echo ""
 echo "SUCCESS: білд запущено"
 echo ""
-echo "Чекаю version 1.5.5-timestamp-fix..."
+echo "Чекаю version 1.5.6-signal-fast..."
 for i in $(seq 1 20); do
   sleep 20
   STATUS=$(curl -sf "https://prime-trade-production.up.railway.app/api/collector/status" 2>/dev/null || echo "")

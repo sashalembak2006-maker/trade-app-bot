@@ -3,7 +3,6 @@ import {
   SignalEngine,
   BridgeMarketDataProvider,
   calculateMartingale,
-  isBridgeSyntheticFallbackEnabled,
   isPlausibleMarketPrice,
   NEWS,
   INDICATORS,
@@ -16,12 +15,13 @@ import { log } from '../logger.js';
 import { notifyAdminsDepositRequest } from '../services/notify.js';
 import { resolveTelegramUser } from '../middleware/auth.js';
 import { serializeUser, hasAppAccess, hasVipAccess, hasLimitedAccess, hasSignalAccess } from '../middleware/access.js';
+import { livePriceFromTickStore, resolveLiveSignalPrice } from '../services/signal-price.js';
 
 const router = Router();
 const signalEngine = new SignalEngine();
 
 const focusGraceMs = () =>
-  Math.min(Math.max(Number(process.env.SIGNAL_FOCUS_GRACE_MS) || 2800, 1500), 5000);
+  Math.min(Math.max(Number(process.env.SIGNAL_FOCUS_GRACE_MS) || 600, 200), 2000);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -232,15 +232,22 @@ router.get('/assets/:symbol/price', async (req, res) => {
     requestFocus(symbol, 15_000);
   }
   try {
+    const tickLive = livePriceFromTickStore(symbol);
+    if (tickLive != null) {
+      return res.json({ symbol, price: tickLive, live: true, at: Date.now() });
+    }
+
     let price: number;
     if (provider instanceof BridgeMarketDataProvider) {
-      const quote = provider.getBridgeQuote(symbol, 60_000);
+      const quote = provider.hasLivePrice(symbol)
+        ? provider.getBridgeQuote(symbol, 4_000)
+        : null;
       if (quote != null) {
         price = quote;
       } else {
-        const waitMs = Math.min(Number(req.query.waitMs) || 2500, 8000);
+        const waitMs = Math.min(Number(req.query.waitMs) || 1200, 4000);
         price = await provider.waitForLivePrice(symbol, waitMs, {
-          allowSynthetic: isBridgeSyntheticFallbackEnabled(),
+          allowSynthetic: false,
         });
       }
     } else {
@@ -322,43 +329,25 @@ router.post('/signals/generate', async (req, res) => {
   }
 
   const waitMs = Math.min(
-    Math.max(
-      Number(process.env.SIGNAL_PRICE_WAIT_MS) ||
-        (isBridgeSyntheticFallbackEnabled() ? 4_000 : 8_000),
-      2_000,
-    ),
-    isBridgeSyntheticFallbackEnabled() ? 6_000 : 12_000,
+    Math.max(Number(process.env.SIGNAL_PRICE_WAIT_MS) || 2200, 800),
+    4000,
   );
   if (getMarketMode() === 'platform') {
-    requestFocus(symbol, waitMs + 45_000);
-    const preQuote =
-      provider instanceof BridgeMarketDataProvider
-        ? provider.getBridgeQuote(symbol, 120_000)
-        : null;
-    await sleep(preQuote != null ? 400 : Math.min(focusGraceMs(), 1800));
+    requestFocus(symbol, waitMs + 35_000);
   }
 
-  let price: number;
+  let price: number | null = null;
   let payout: number;
   try {
     payout = await provider.getPayout(symbol);
+
     if (provider instanceof BridgeMarketDataProvider) {
-      let quote = provider.getBridgeQuote(symbol, 120_000);
-      if (quote == null) {
-        await sleep(1200);
-        quote = provider.getBridgeQuote(symbol, 120_000);
+      price = resolveLiveSignalPrice(symbol, provider);
+      if (price == null) {
+        await sleep(Math.min(focusGraceMs(), 500));
+        price = resolveLiveSignalPrice(symbol, provider);
       }
-      if (quote != null) {
-        price = quote;
-      } else if (isBridgeSyntheticFallbackEnabled()) {
-        try {
-          price = await provider.waitForLivePrice(symbol, Math.min(waitMs, 5000), {
-            allowSynthetic: true,
-          });
-        } catch {
-          price = await provider.getAssetPrice(symbol);
-        }
-      } else {
+      if (price == null) {
         price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
       }
     } else {

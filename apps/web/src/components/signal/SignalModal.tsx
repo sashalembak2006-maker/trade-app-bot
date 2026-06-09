@@ -17,9 +17,18 @@ import {
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 3500;
-const SIGNAL_REQUEST_TIMEOUT_MS = 50_000;
-const LOADING_WATCHDOG_MS = 55_000;
+const ANALYSIS_MIN_MS = 1200;
+const COVERAGE_ANALYSIS_MS = 800;
+const SIGNAL_REQUEST_TIMEOUT_MS = 22_000;
+const LOADING_WATCHDOG_MS = 28_000;
+
+async function fetchPoEntryPrice(symbol: string): Promise<number> {
+  const ticks = await api.getTicks(symbol, 0);
+  if (ticks.live && ticks.latest != null) return ticks.latest;
+  const live = await api.getLivePrice(symbol, 900);
+  if (live.price != null && live.price > 0) return live.price;
+  throw Object.assign(new Error('NO_PRICE'), { code: 'NO_PRICE' });
+}
 
 /** Fire focus in background — never block signal on PO chart switch. */
 function requestBridgeFocus(symbol: string): void {
@@ -153,7 +162,7 @@ export function SignalModal() {
     setSettlement, setMartingaleMultiplier, resetSignalSession,
     setLoadingStep, loadingStep, setSelectedTimeframe, language,
     signalError, setSignalError, marketStatus, setMarketStatus, setAssets,
-    signalCurrentPrice, accessStatus, assets,
+    signalCurrentPrice, signalLockedEntryPrice, accessStatus, assets,
   } = useAppStore();
   const t = useT(language);
   useTelegram();
@@ -185,7 +194,7 @@ export function SignalModal() {
 
     const pollLive = async () => {
       try {
-        const { price } = await api.getLivePrice(sym, 800);
+        const { price } = await api.getLivePrice(sym, 400);
         if (cancelled || price == null) return;
         useAppStore.setState({ signalCurrentPrice: price });
         const asset = useAppStore.getState().assets.find((a) => a.symbol === sym);
@@ -203,7 +212,7 @@ export function SignalModal() {
 
     void api.requestFocus(sym, 45_000).catch(() => {});
     pollLive();
-    const priceId = setInterval(pollLive, 400);
+    const priceId = setInterval(pollLive, 250);
     const focusId = setInterval(() => void api.requestFocus(sym, 45_000).catch(() => {}), 4000);
     return () => {
       cancelled = true;
@@ -324,12 +333,12 @@ export function SignalModal() {
     void handleGetSignal();
   };
 
-  const runAnalysisAnimation = () =>
+  const runAnalysisAnimation = (minMs = ANALYSIS_MIN_MS) =>
     new Promise<void>((resolve) => {
       setSignalPhase('loading');
       setLoadingStep(0);
       setLoadingTitle(t.analyzingMarket);
-      setTimeout(resolve, ANALYSIS_MIN_MS);
+      setTimeout(resolve, minMs);
     });
 
   const handleGetSignal = async (opts?: { keepMultiplier?: boolean }) => {
@@ -415,20 +424,15 @@ export function SignalModal() {
     setMartingaleMultiplier(next);
     setSettlement(null);
     settledRef.current = false;
+    setSignalError(null);
     useAppStore.setState({ signalCurrentPrice: null });
-
-    await runAnalysisAnimation();
 
     try {
       void api.requestFocus(selectedAsset.symbol, 45_000).catch(() => {});
-      let entryPrice = signalResult.entryPrice;
-      try {
-        const live = await api.getLivePrice(selectedAsset.symbol, 2500);
-        if (live.price != null) entryPrice = live.price;
-      } catch {
-        const tick = useAppStore.getState().signalCurrentPrice;
-        if (tick != null) entryPrice = tick;
-      }
+      const [, entryPrice] = await Promise.all([
+        runAnalysisAnimation(COVERAGE_ANALYSIS_MS),
+        fetchPoEntryPrice(selectedAsset.symbol),
+      ]);
 
       const durationMs = timeframeToMs(selectedTimeframe);
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
@@ -441,11 +445,11 @@ export function SignalModal() {
       });
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
       hapticSuccess();
-      logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`);
+      logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`, entryPrice);
     } catch (e) {
       logger.error('Signal', 'coverage failed', e);
-      setSignalPhase('settled');
       setSignalError(t.errorSignal);
+      setSignalPhase('settled');
     }
   };
 
@@ -488,43 +492,25 @@ export function SignalModal() {
                 <p className="text-xs text-slate-400">{liveAsset.name}</p>
               </div>
             </div>
+            <div className="text-right">
+              <p className="text-xs text-slate-500">{t.payout}</p>
+              <motion.p
+                key={liveAsset.payout}
+                initial={{ scale: 1.1 }}
+                animate={{ scale: 1 }}
+                className="text-xl font-bold text-neon-yellow"
+              >
+                {liveAsset.payout > 0 ? `${liveAsset.payout}%` : '—'}
+              </motion.p>
+            </div>
             <button
               type="button"
               onClick={() => { setSelectedAsset(null); resetSignalSession(); }}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white"
+              className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white"
             >
               ✕
             </button>
           </div>
-
-          {(signalPhase === 'idle' || signalPhase === 'loading') && (
-            <div className="mb-4 flex items-center justify-between rounded-2xl bg-black/40 p-4">
-              <div>
-                <p className="text-xs text-slate-500">{t.entry}</p>
-                <p className="text-2xl font-bold text-white">
-                  {liveAsset.price != null
-                    ? formatPrice(liveAsset.price)
-                    : liveAsset.lastKnownPrice != null
-                      ? formatPrice(liveAsset.lastKnownPrice)
-                      : '—'}
-                </p>
-                {liveAsset.price == null && (
-                  <p className="text-[10px] text-slate-500">{t.priceOnSignalStart}</p>
-                )}
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-500">{t.payout}</p>
-                <motion.p
-                  key={liveAsset.payout}
-                  initial={{ scale: 1.1 }}
-                  animate={{ scale: 1 }}
-                  className="text-2xl font-bold text-neon-yellow"
-                >
-                  {liveAsset.payout}%
-                </motion.p>
-              </div>
-            </div>
-          )}
 
           {liveAsset.payout < 60 && signalPhase === 'idle' && (
             <div className="mb-3 rounded-xl border border-neon-yellow/30 bg-neon-yellow/10 px-3 py-2 text-xs text-neon-yellow">
@@ -638,13 +624,13 @@ export function SignalModal() {
               <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
                 <StatCard label={t.market} value={signalResult.market} />
                 <StatCard label={t.time} value={signalResult.timeframe} accent />
-                <StatCard label={t.entry} value={formatPrice(signalResult.entryPrice)} />
                 <StatCard
                   label={t.riskLevel}
                   value={riskLabel}
                 />
                 <StatCard label={t.confidence} value={`${signalResult.confidence}%`} />
                 <StatCard label="RSI" value={String(signalResult.indicators.rsi)} />
+                <StatCard label={t.payout} value={`${signalResult.payout}%`} />
               </div>
 
               <div className="mb-4 rounded-2xl border border-prime-gold/25 bg-black/50 p-5 text-center">
@@ -673,15 +659,15 @@ export function SignalModal() {
               <div className="mb-4 rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.04] to-transparent p-4 text-center">
                 <p className="text-[10px] uppercase tracking-wider text-slate-500">{t.currentPrice}</p>
                 <motion.p
-                  key={signalCurrentPrice ?? 0}
-                  initial={{ opacity: 0.7, y: -2 }}
+                  key={signalCurrentPrice ?? signalResult.entryPrice}
+                  initial={{ opacity: 0.85, y: -2 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="font-display mt-1 text-2xl font-bold tracking-wide text-prime-gold-light"
                 >
                   {formatPrice(signalCurrentPrice ?? signalResult.entryPrice)}
                 </motion.p>
                 <p className="font-serif mt-2 text-xs text-slate-500">
-                  {t.entry}: {formatPrice(signalResult.entryPrice)} · {t.liveFromPo}
+                  {t.entry}: {formatPrice(signalLockedEntryPrice ?? signalResult.entryPrice)} · {t.liveFromPo}
                 </p>
               </div>
 

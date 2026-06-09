@@ -29,8 +29,10 @@ interface AppState {
   marketStatus: MarketDataStatus | null;
   wsConnected: boolean;
   signalError: string | null;
-  /** Last real WS tick for the active signal symbol during countdown. */
+  /** Live PO tick during countdown (exit reference). */
   signalCurrentPrice: number | null;
+  /** Locked PO entry price when signal was issued (for win/loss vs live exit). */
+  signalLockedEntryPrice: number | null;
 
   setLanguage: (lang: Language) => void;
   setSearchQuery: (q: string) => void;
@@ -81,6 +83,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   wsConnected: false,
   signalError: null,
   signalCurrentPrice: null,
+  signalLockedEntryPrice: null,
 
   setLanguage: (language) => set({ language }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -131,6 +134,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       settlement: null,
       martingaleMultiplier: 1,
       signalError: null,
+      signalLockedEntryPrice: null,
+      signalCurrentPrice: null,
     }),
   setActiveCategory: (activeCategory) => set({ activeCategory }),
   setSelectedTimeframe: (selectedTimeframe) => set({ selectedTimeframe }),
@@ -141,12 +146,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       signalCurrentPrice: signalResult?.entryPrice ?? null,
     }),
   beginSignalResult: (signalResult) =>
-    set({
+    set((state) => ({
       signalResult,
       signalPhase: 'result',
       signalCurrentPrice: signalResult.entryPrice,
+      signalLockedEntryPrice:
+        state.martingaleMultiplier === 1
+          ? signalResult.entryPrice
+          : state.signalLockedEntryPrice ?? signalResult.entryPrice,
       settlement: null,
-    }),
+    })),
   setSettlement: (settlement) => set({ settlement }),
   setMartingaleMultiplier: (martingaleMultiplier) => set({ martingaleMultiplier }),
   resetSignalSession: () =>
@@ -156,6 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       settlement: null,
       martingaleMultiplier: 1,
       signalError: null,
+      signalLockedEntryPrice: null,
       signalCurrentPrice: null,
     }),
   setLoadingStep: (loadingStep) => set({ loadingStep }),
