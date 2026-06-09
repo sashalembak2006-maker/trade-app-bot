@@ -128,7 +128,7 @@ export class PocketWsClient {
       this.poAssetBySymbol.get(displaySymbol) ?? displaySymbolToPoAsset(displaySymbol);
     if (!poAsset) return;
     this.lastFocusSymbol = displaySymbol;
-    this.ws.send(`42["changeSymbol",{"asset":"${poAsset}"}]`);
+    this.ws.send(`42["changeSymbol",{"asset":"${poAsset}","period":30}]`);
     this.activeSymbol = displaySymbol;
     this.status(`changeSymbol → ${displaySymbol} (${poAsset})`);
   }
@@ -283,15 +283,30 @@ export class PocketWsClient {
         timestamp: Date.now(),
         live: true,
       });
+    } else {
+      this.assets.set(sym, {
+        symbol: sym,
+        poAsset: displaySymbolToPoAsset(sym),
+        payout: 85,
+        isOTC: /\sOTC$/i.test(sym),
+        price: tick.price,
+        lastKnownPrice: tick.price,
+        timestamp: Date.now(),
+        live: true,
+      });
     }
+    this.status(`updateStream → ${sym} ${tick.price}`);
   }
 
   private dispatchEvent(event: string, data: unknown): void {
     const ev = event.toLowerCase();
     if (ev === 'successauth' || ev === 'success') {
       this.connected = true;
-      this.status('Authenticated — waiting for updateAssets');
+      this.status('Authenticated — waiting for PO data');
       setTimeout(() => this.nudgeAfterAuth(), 400);
+      setTimeout(() => {
+        if (this.assets.size === 0 && this.connected) this.nudgeAfterAuth();
+      }, 8000);
       return;
     }
     if (ev.includes('notauthorized') || ev.includes('authfail') || ev === 'disconnect') {
@@ -315,9 +330,15 @@ export class PocketWsClient {
 
   private nudgeAfterAuth(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) return;
-    this.ws.send('42["changeSymbol",{"asset":"EURUSD_otc"}]');
+    const asset = 'EURUSD_otc';
+    this.ws.send('42["favorite/load"]');
+    this.ws.send('42["indicator/load"]');
+    this.ws.send('42["price-alert/load"]');
+    this.ws.send(`42["subscribeSymbol","${asset}"]`);
+    this.ws.send(`42["changeSymbol",{"asset":"${asset}","period":30}]`);
+    this.ws.send(`42["subfor","${asset}"]`);
     this.activeSymbol = 'EUR/USD OTC';
-    this.status('Authenticated — nudged PO for assets');
+    this.status('Authenticated — PO bootstrap sent');
   }
 
   private pruneOrphans(): void {

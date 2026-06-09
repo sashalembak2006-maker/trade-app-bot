@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { PocketSioClient } from './pocket-sio.js';
+import { PocketWsClient } from './pocket-ws.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.5.2-honest';
+const VERSION = '1.5.3-ws';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
@@ -36,7 +36,7 @@ function log(msg: string, extra?: unknown) {
 
 let signalFocusUntil = 0;
 
-async function pollFocus(client: PocketSioClient): Promise<void> {
+async function pollFocus(client: PocketWsClient): Promise<void> {
   try {
     const res = await fetch(`${API_URL}/api/bridge/focus`);
     if (!res.ok) return;
@@ -52,7 +52,7 @@ async function pollFocus(client: PocketSioClient): Promise<void> {
   }
 }
 
-async function pushAssets(client: PocketSioClient): Promise<void> {
+async function pushAssets(client: PocketWsClient): Promise<void> {
   const snap = client.snapshot();
   const assets = client.assetsForBridge();
   if (assets.length === 0 || !BRIDGE_SECRET) return;
@@ -75,7 +75,7 @@ async function pushAssets(client: PocketSioClient): Promise<void> {
   }
 }
 
-async function sendHeartbeat(client: PocketSioClient): Promise<void> {
+async function sendHeartbeat(client: PocketWsClient): Promise<void> {
   if (!COLLECTOR_SECRET) return;
   const snap = client.snapshot();
   const pricedCount = snap.assets.filter((a) => typeof a.price === 'number').length;
@@ -126,7 +126,7 @@ function main(): void {
     log('WARN: PO_AUTH still uses sessionToken — set PO_AUTH_MESSAGE on Railway after redeploy');
   }
 
-  const client = new PocketSioClient({
+  const client = new PocketWsClient({
     wsUrl: PO_WS_URL,
     wsUrlFallbacks: PO_WS_FALLBACKS,
     authMessage: PO_AUTH_MESSAGE,
