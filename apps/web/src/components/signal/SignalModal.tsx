@@ -14,13 +14,12 @@ import {
   settleSignal,
   timeframeToMs,
 } from '../../utils/signal-settlement';
-import { generateLocalSignal, recordSignalBackground, resolvePoEntryPrice } from '../../services/local-signal';
+import { generateLocalSignal, recordSignalBackground } from '../../services/local-signal';
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_MIN_MS = 380;
-const COVERAGE_ANALYSIS_MS = 320;
-const LOADING_WATCHDOG_MS = 12_000;
+const ANALYSIS_DURATION_MS = 5000;
+const COVERAGE_ANALYSIS_MS = 2500;
 
 /** Cancel stale in-flight signal requests when user retries. */
 let activeSignalAbort: AbortController | null = null;
@@ -288,6 +287,7 @@ export function SignalModal() {
   useEffect(() => {
     if (signalPhase !== 'loading') return;
     const steps = t.loading;
+    const stepMs = Math.max(800, Math.floor(ANALYSIS_DURATION_MS / Math.max(steps.length, 1)));
     let step = 0;
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
@@ -296,19 +296,9 @@ export function SignalModal() {
       step++;
       setLoadingStep(step);
       if (step >= steps.length) clearInterval(interval);
-    }, 450);
-    const watchdog = setTimeout(() => {
-      if (useAppStore.getState().signalPhase !== 'loading') return;
-      logger.error('Signal', 'loading watchdog fired');
-      setSignalError(t.errorTimeout);
-      setSignalPhase('idle');
-      hapticFeedback('heavy');
-    }, LOADING_WATCHDOG_MS);
-    return () => {
-      clearInterval(interval);
-      clearTimeout(watchdog);
-    };
-  }, [signalPhase, setLoadingStep, setSignalError, setSignalPhase, t.loading, t.analyzingMarket, t.errorTimeout]);
+    }, stepMs);
+    return () => clearInterval(interval);
+  }, [signalPhase, setLoadingStep, t.loading, t.analyzingMarket]);
 
   const dataSourceBlocked =
     !!signalError &&
@@ -338,13 +328,24 @@ export function SignalModal() {
     void handleGetSignal();
   };
 
-  const runAnalysisAnimation = (minMs = ANALYSIS_MIN_MS) =>
+  const runAnalysisAnimation = (minMs = ANALYSIS_DURATION_MS) =>
     new Promise<void>((resolve) => {
       setSignalPhase('loading');
       setLoadingStep(0);
       setLoadingTitle(t.analyzingMarket);
       setTimeout(resolve, minMs);
     });
+
+  const readPoPrice = (symbol: string): number | null => {
+    const fromList = useAppStore.getState().assets.find((x) => x.symbol === symbol);
+    const p =
+      fromList?.price ??
+      fromList?.lastKnownPrice ??
+      selectedAsset?.price ??
+      selectedAsset?.lastKnownPrice ??
+      null;
+    return p != null && p > 0 ? p : null;
+  };
 
   const handleGetSignal = async (opts?: { keepMultiplier?: boolean }) => {
     if (!selectedAsset) return;
@@ -378,13 +379,11 @@ export function SignalModal() {
     void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
 
     try {
-      const [entryPrice] = await Promise.all([
-        resolvePoEntryPrice(selectedAsset.symbol, selectedAsset),
-        runAnalysisAnimation(),
-      ]);
+      await runAnalysisAnimation(ANALYSIS_DURATION_MS);
       if (abort.signal.aborted) return;
 
-      if (entryPrice == null || entryPrice <= 0) {
+      const entryPrice = readPoPrice(selectedAsset.symbol);
+      if (entryPrice == null) {
         setSignalError(t.openAssetOnPlatform);
         setSignalPhase('idle');
         hapticFeedback('heavy');
@@ -392,7 +391,7 @@ export function SignalModal() {
       }
 
       const result = generateLocalSignal({
-        asset: selectedAsset,
+        asset: { ...selectedAsset, payout: liveAsset?.payout ?? selectedAsset.payout },
         timeframe: selectedTimeframe,
         entryPrice,
       });
@@ -430,12 +429,10 @@ export function SignalModal() {
 
     try {
       void api.requestFocus(selectedAsset.symbol, 60_000).catch(() => {});
-      const [entryPrice] = await Promise.all([
-        resolvePoEntryPrice(selectedAsset.symbol, selectedAsset),
-        runAnalysisAnimation(COVERAGE_ANALYSIS_MS),
-      ]);
+      await runAnalysisAnimation(COVERAGE_ANALYSIS_MS);
 
-      if (entryPrice == null || entryPrice <= 0) {
+      const entryPrice = readPoPrice(selectedAsset.symbol);
+      if (entryPrice == null) {
         setSignalError(t.openAssetOnPlatform);
         setSignalPhase('settled');
         return;

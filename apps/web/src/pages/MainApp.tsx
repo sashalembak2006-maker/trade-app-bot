@@ -32,7 +32,7 @@ interface MainAppProps {
 }
 
 export function MainApp({ limited = false, access, telegramId, apiError, onRefreshAccess }: MainAppProps) {
-  const { language, setAssets, marketStatus, setMarketStatus, accessStatus, userProfile, signalPhase, selectedAsset } = useAppStore();
+  const { language, setAssets, marketStatus, setMarketStatus, accessStatus, userProfile } = useAppStore();
   const [showRegistration, setShowRegistration] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const effectiveLimited = limited || !accessStatus?.hasAppAccess;
@@ -97,10 +97,8 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
   }, [setAssets, setMarketStatus]);
 
-  // Poll assets — pause while signal API runs (Telegram WebView has ~6 connection limit).
+  // Poll assets — keep list prices fresh (PO bridge scan).
   useEffect(() => {
-    if (signalPhase === 'loading') return;
-
     const reloadAssets = () => {
       api
         .getAssets()
@@ -112,10 +110,9 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
 
     reloadAssets();
-    const ms = signalPhase === 'result' || selectedAsset ? 400 : 700;
-    const id = setInterval(reloadAssets, ms);
+    const id = setInterval(reloadAssets, 300);
     return () => clearInterval(id);
-  }, [setMarketStatus, setAssets, signalPhase, selectedAsset]);
+  }, [setMarketStatus, setAssets]);
 
   const notConfigured = marketStatus && !marketStatus.configured && marketStatus.mode !== 'live';
   const platformUnavailable =

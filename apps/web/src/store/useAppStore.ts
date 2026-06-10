@@ -99,8 +99,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           const change = Number.isFinite(a.change) ? a.change : (prev?.change ?? 0);
           return {
             ...a,
-            price,
-            lastKnownPrice,
+            price: price ?? lastKnownPrice,
+            lastKnownPrice: lastKnownPrice ?? price,
             change,
             favorite: prev?.favorite ?? a.favorite ?? false,
           };

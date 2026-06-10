@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
 import type { Asset } from '../../types';
-import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
 import { formatPercentChange } from '../../utils/format';
 import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
@@ -22,17 +22,26 @@ function AssetRow({
   onSelect,
   onToggleFavorite,
 }: AssetRowProps) {
-  const bridgePrice =
+  const prevRef = useRef<number | null>(null);
+  const [flash, setFlash] = useState(false);
+
+  const displayPrice =
     a.price != null && isPlausibleAssetPrice(a.price, a.symbol)
       ? a.price
       : a.lastKnownPrice != null && isPlausibleAssetPrice(a.lastKnownPrice, a.symbol)
         ? a.lastKnownPrice
         : null;
-  const { price: displayPrice, payout: displayPayout, live } = useAssetTickPrice(
-    a.symbol,
-    a.payout,
-    bridgePrice,
-  );
+
+  useEffect(() => {
+    if (displayPrice == null) return;
+    if (prevRef.current != null && Math.abs(prevRef.current - displayPrice) > 1e-12) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 350);
+      prevRef.current = displayPrice;
+      return () => clearTimeout(t);
+    }
+    prevRef.current = displayPrice;
+  }, [displayPrice]);
 
   return (
     <motion.button
@@ -55,9 +64,9 @@ function AssetRow({
         <div className="text-right">
           {displayPrice != null ? (
             <motion.p
-              key={live ? Math.round(displayPrice * 100_000) : displayPrice}
-              initial={live ? { opacity: 0.85, y: -1 } : false}
-              animate={live ? { opacity: 1, y: 0 } : undefined}
+              key={displayPrice}
+              initial={flash ? { opacity: 0.7, y: -1 } : false}
+              animate={{ opacity: 1, y: 0 }}
               className="font-display text-sm font-semibold tracking-wide text-prime-gold-light"
             >
               {displayPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
@@ -66,9 +75,9 @@ function AssetRow({
             <p className="text-[10px] text-slate-600">{priceOnSignalStart}</p>
           )}
           <p className="text-xs font-bold text-prime-gold">
-            {displayPayout > 0 ? `${displayPayout}%` : '—'}
+            {a.payout > 0 ? `${a.payout}%` : '—'}
           </p>
-          {live && displayPrice != null && (
+          {displayPrice != null && a.change !== 0 && (
             <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>
               {formatPercentChange(a.change)}
             </p>

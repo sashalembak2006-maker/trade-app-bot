@@ -36,6 +36,10 @@ export function recordBridgeTicks(
           ? a.lastKnownPrice
           : null;
     if (catalog != null && isPlausibleMarketPrice(catalog, a.symbol)) {
+      tickStore.record(a.symbol, catalog, a.timestamp ?? now, {
+        payout: a.payout,
+        live: a.live === true,
+      });
       tickStore.setCatalogPrice(a.symbol, catalog, a.timestamp ?? now, a.payout);
     } else if (typeof a.payout === 'number') {
       const prev = tickStore.query(a.symbol, 0);
