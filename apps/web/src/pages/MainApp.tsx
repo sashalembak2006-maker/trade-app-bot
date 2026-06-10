@@ -110,7 +110,7 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
 
     reloadAssets();
-    const id = setInterval(reloadAssets, 300);
+    const id = setInterval(reloadAssets, 150);
     return () => clearInterval(id);
   }, [setMarketStatus, setAssets]);
 

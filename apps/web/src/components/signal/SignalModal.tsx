@@ -14,7 +14,7 @@ import {
   settleSignal,
   timeframeToMs,
 } from '../../utils/signal-settlement';
-import { generateLocalSignal, recordSignalBackground } from '../../services/local-signal';
+import { fetchFreshPoPrice, generateLocalSignal, readPoTickPrice, recordSignalBackground } from '../../services/local-signal';
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
@@ -174,12 +174,37 @@ export function SignalModal() {
 
   useEffect(() => {
     if (!selectedAsset) return;
-    void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+    void api.requestFocus(selectedAsset.symbol, 120_000).catch(() => {});
     const id = setInterval(() => {
-      void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
-    }, 4000);
+      void api.requestFocus(selectedAsset.symbol, 120_000).catch(() => {});
+    }, 1000);
     return () => clearInterval(id);
   }, [selectedAsset?.symbol]);
+
+  // Warm live PO stream during analysis + countdown prep.
+  useEffect(() => {
+    if ((signalPhase !== 'loading' && signalPhase !== 'result') || !selectedAsset) return;
+    const sym = selectedAsset.symbol;
+    let cancelled = false;
+
+    const pump = async () => {
+      try {
+        const price = await readPoTickPrice(sym);
+        if (cancelled || price == null) return;
+        useAppStore.setState({ signalCurrentPrice: price });
+        const row = useAppStore.getState().assets.find((a) => a.symbol === sym);
+        if (row) useAppStore.getState().updateAssetPrice(sym, price, row.payout, row.change);
+      } catch { /* keep last */ }
+    };
+
+    void api.requestFocus(sym, 120_000).catch(() => {});
+    void pump();
+    const id = setInterval(pump, 100);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [signalPhase, selectedAsset?.symbol]);
 
   const { seconds, formatted } = useCountdown(
     signalPhase === 'result' ? signalResult?.expiresAt : null,
@@ -197,7 +222,7 @@ export function SignalModal() {
 
     const pollLive = async () => {
       try {
-        const { price } = await api.getLivePrice(sym, 400);
+        const price = await readPoTickPrice(sym);
         if (cancelled || price == null) return;
         useAppStore.setState({ signalCurrentPrice: price });
         const asset = useAppStore.getState().assets.find((a) => a.symbol === sym);
@@ -213,10 +238,10 @@ export function SignalModal() {
       }
     };
 
-    void api.requestFocus(sym, 45_000).catch(() => {});
+    void api.requestFocus(sym, 120_000).catch(() => {});
     pollLive();
-    const priceId = setInterval(pollLive, 250);
-    const focusId = setInterval(() => void api.requestFocus(sym, 45_000).catch(() => {}), 4000);
+    const priceId = setInterval(pollLive, 100);
+    const focusId = setInterval(() => void api.requestFocus(sym, 120_000).catch(() => {}), 1000);
     return () => {
       cancelled = true;
       clearInterval(priceId);
@@ -336,17 +361,6 @@ export function SignalModal() {
       setTimeout(resolve, minMs);
     });
 
-  const readPoPrice = (symbol: string): number | null => {
-    const fromList = useAppStore.getState().assets.find((x) => x.symbol === symbol);
-    const p =
-      fromList?.price ??
-      fromList?.lastKnownPrice ??
-      selectedAsset?.price ??
-      selectedAsset?.lastKnownPrice ??
-      null;
-    return p != null && p > 0 ? p : null;
-  };
-
   const handleGetSignal = async (opts?: { keepMultiplier?: boolean }) => {
     if (!selectedAsset) return;
 
@@ -376,13 +390,13 @@ export function SignalModal() {
     setLoadingTitle(t.analyzingMarket);
     logger.info('Signal', 'local generate', selectedAsset.symbol, selectedTimeframe);
 
-    void api.requestFocus(selectedAsset.symbol, 90_000).catch(() => {});
+    void api.requestFocus(selectedAsset.symbol, 120_000).catch(() => {});
 
     try {
       await runAnalysisAnimation(ANALYSIS_DURATION_MS);
       if (abort.signal.aborted) return;
 
-      const entryPrice = readPoPrice(selectedAsset.symbol);
+      const entryPrice = await fetchFreshPoPrice(selectedAsset.symbol);
       if (entryPrice == null) {
         setSignalError(t.openAssetOnPlatform);
         setSignalPhase('idle');
@@ -431,7 +445,7 @@ export function SignalModal() {
       void api.requestFocus(selectedAsset.symbol, 60_000).catch(() => {});
       await runAnalysisAnimation(COVERAGE_ANALYSIS_MS);
 
-      const entryPrice = readPoPrice(selectedAsset.symbol);
+      const entryPrice = await fetchFreshPoPrice(selectedAsset.symbol);
       if (entryPrice == null) {
         setSignalError(t.openAssetOnPlatform);
         setSignalPhase('settled');

@@ -118,7 +118,7 @@ export class MarketTickStore {
     const liveAt = this.liveAt.get(symbol) ?? 0;
     const cat = this.catalogPrice.get(symbol) ?? null;
     const catAt = this.catalogAt.get(symbol) ?? 0;
-    const isLive = liveAt > 0 && Date.now() - liveAt < 5000;
+    const isLive = liveAt > 0 && Date.now() - liveAt < 8000;
     const last = this.lastPrice.get(symbol) ?? null;
     const catalog =
       catAt > 0 && Date.now() - catAt < CATALOG_TTL_MS ? cat : null;

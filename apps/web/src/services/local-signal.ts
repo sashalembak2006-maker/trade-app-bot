@@ -1,25 +1,33 @@
 import { SignalEngine } from '../../../../packages/shared/src/signal/engine';
 import type { Asset, SignalResult } from '../types';
 import { api } from './api';
+import { useAppStore } from '../store/useAppStore';
 
 const engine = new SignalEngine();
 
-/** Latest PO quote — asset list first, optional quick tick poll. */
-export async function resolvePoEntryPrice(symbol: string, asset: Asset): Promise<number | null> {
-  const fromList = asset.price ?? asset.lastKnownPrice ?? null;
+/** Fastest PO quote — live tick store first (same pipeline as PO when focused). */
+export async function fetchFreshPoPrice(symbol: string): Promise<number | null> {
   try {
-    const ticks = await Promise.race([
-      api.getTicks(symbol, 0),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
-    ]);
-    if (ticks) {
-      const p = ticks.display ?? (ticks.live ? ticks.latest : null) ?? ticks.catalog ?? fromList;
-      if (p != null && p > 0) return p;
-    }
+    const ticks = await api.getTicks(symbol, 0);
+    if (ticks.live && ticks.latest != null && ticks.latest > 0) return ticks.latest;
+    if (ticks.display != null && ticks.display > 0) return ticks.display;
+    if (ticks.latest != null && ticks.latest > 0) return ticks.latest;
+    if (ticks.catalog != null && ticks.catalog > 0) return ticks.catalog;
   } catch {
     /* fall through */
   }
-  return fromList != null && fromList > 0 ? fromList : null;
+
+  const row = useAppStore.getState().assets.find((a) => a.symbol === symbol);
+  const fromList = row?.price ?? row?.lastKnownPrice ?? null;
+  if (fromList != null && fromList > 0) return fromList;
+
+  try {
+    const live = await api.getLivePrice(symbol, 500);
+    if (live.price != null && live.price > 0) return live.price;
+  } catch {
+    /* no price */
+  }
+  return null;
 }
 
 export function generateLocalSignal(input: {
@@ -52,4 +60,16 @@ export function recordSignalBackground(result: SignalResult): void {
       expiresAt: result.expiresAt,
     })
     .catch(() => {});
+}
+
+/** Read in-memory ticks only — no network wait (countdown UI). */
+export async function readPoTickPrice(symbol: string): Promise<number | null> {
+  try {
+    const ticks = await api.getTicks(symbol, 0);
+    if (ticks.live && ticks.latest != null) return ticks.latest;
+    return ticks.display ?? ticks.latest ?? ticks.catalog ?? null;
+  } catch {
+    const row = useAppStore.getState().assets.find((a) => a.symbol === symbol);
+    return row?.price ?? row?.lastKnownPrice ?? null;
+  }
 }

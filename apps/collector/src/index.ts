@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { PocketWsClient } from './pocket-ws.js';
 import { normalizePoAuthMessage } from './normalize-auth.js';
 
-const VERSION = '1.5.12-live-prices';
+const VERSION = '1.5.13-po-sync';
 
 function resolvePoAuthMessage(): string {
   const b64 = process.env.PO_AUTH_MESSAGE_B64?.trim();
@@ -25,7 +25,7 @@ const PO_WS_FALLBACKS = (process.env.PO_WS_URL_FALLBACKS ?? '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-const PUSH_MS = Number(process.env.COLLECTOR_PUSH_INTERVAL_MS ?? 250);
+const PUSH_MS = Number(process.env.COLLECTOR_PUSH_INTERVAL_MS ?? 150);
 const HEARTBEAT_MS = Number(process.env.COLLECTOR_HEARTBEAT_MS ?? 10000);
 
 function log(msg: string, extra?: unknown) {
@@ -141,12 +141,12 @@ function main(): void {
 
   setInterval(() => {
     void pollFocus(client);
-  }, 800);
+  }, 400);
 
   setInterval(() => {
     if (Date.now() < signalFocusUntil) return;
     client.scanNextOtc();
-  }, Number(process.env.OTC_STREAM_MS ?? 350));
+  }, Number(process.env.OTC_STREAM_MS ?? 200));
 
   setInterval(() => {
     void sendHeartbeat(client);
