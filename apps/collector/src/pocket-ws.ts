@@ -157,8 +157,14 @@ export class PocketWsClient {
           ...a,
           ...(lkp != null ? { lastKnownPrice: lkp, price: lkp } : {}),
         };
-        if (active && a.symbol === active && a.price != null) {
-          return { ...base, price: a.price, live: true };
+        if (
+          active &&
+          a.symbol === active &&
+          a.live === true &&
+          a.price != null &&
+          Date.now() - (a.timestamp ?? 0) < 4000
+        ) {
+          return { ...base, price: a.price, lastKnownPrice: a.price, live: true };
         }
         const { live: _l, ...rest } = base;
         return rest;
@@ -258,6 +264,21 @@ export class PocketWsClient {
     for (const a of parsed) {
       const prev = this.assets.get(a.symbol);
       if (a.poAsset) this.poAssetBySymbol.set(a.symbol, a.poAsset);
+
+      const streamLive =
+        prev?.live === true &&
+        a.symbol === this.activeSymbol &&
+        Date.now() - (prev.timestamp ?? 0) < 4000;
+
+      if (streamLive && prev) {
+        this.assets.set(a.symbol, {
+          ...prev,
+          payout: a.payout ?? prev.payout,
+          poAsset: a.poAsset ?? prev.poAsset,
+        });
+        continue;
+      }
+
       const catalog = a.lastKnownPrice ?? a.price;
       const lkp = catalog ?? prev?.lastKnownPrice ?? prev?.price;
       const livePrice =
@@ -269,6 +290,7 @@ export class PocketWsClient {
       this.assets.set(a.symbol, {
         ...prev,
         ...a,
+        live: false,
         lastKnownPrice: lkp ?? prev?.lastKnownPrice,
         price: livePrice ?? lkp ?? prev?.price,
         timestamp: now,

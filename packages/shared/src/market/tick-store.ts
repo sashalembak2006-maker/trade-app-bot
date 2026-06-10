@@ -118,18 +118,18 @@ export class MarketTickStore {
     const liveAt = this.liveAt.get(symbol) ?? 0;
     const cat = this.catalogPrice.get(symbol) ?? null;
     const catAt = this.catalogAt.get(symbol) ?? 0;
-    const isLive = liveAt > 0 && Date.now() - liveAt < 8000;
+    const isLive = liveAt > 0 && Date.now() - liveAt < 3500;
     const last = this.lastPrice.get(symbol) ?? null;
     const catalog =
       catAt > 0 && Date.now() - catAt < CATALOG_TTL_MS ? cat : null;
     return {
       asset: symbol,
       ticks,
-      latest: last,
+      latest: isLive ? last : null,
       payout: this.payout.get(symbol) ?? null,
       live: isLive,
       catalog,
-      display: isLive && last != null ? last : catalog ?? last,
+      display: isLive && last != null ? last : null,
     };
   }
 

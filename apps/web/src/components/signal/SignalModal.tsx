@@ -14,11 +14,11 @@ import {
   settleSignal,
   timeframeToMs,
 } from '../../utils/signal-settlement';
-import { fetchFreshPoPrice, generateLocalSignal, readPoTickPrice, recordSignalBackground } from '../../services/local-signal';
+import { fetchFreshPoPrice, fetchLivePoTick, generateLocalSignal, readPoLivePrice, recordSignalBackground } from '../../services/local-signal';
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_DURATION_MS = 5000;
+const ANALYSIS_DURATION_MS = 4000;
 const COVERAGE_ANALYSIS_MS = 2500;
 
 /** Cancel stale in-flight signal requests when user retries. */
@@ -189,7 +189,7 @@ export function SignalModal() {
 
     const pump = async () => {
       try {
-        const price = await readPoTickPrice(sym);
+        const price = await readPoLivePrice(sym);
         if (cancelled || price == null) return;
         useAppStore.setState({ signalCurrentPrice: price });
         const row = useAppStore.getState().assets.find((a) => a.symbol === sym);
@@ -222,7 +222,7 @@ export function SignalModal() {
 
     const pollLive = async () => {
       try {
-        const price = await readPoTickPrice(sym);
+        const price = await readPoLivePrice(sym);
         if (cancelled || price == null) return;
         useAppStore.setState({ signalCurrentPrice: price });
         const asset = useAppStore.getState().assets.find((a) => a.symbol === sym);
@@ -230,11 +230,7 @@ export function SignalModal() {
           useAppStore.getState().updateAssetPrice(sym, price, asset.payout, asset.change);
         }
       } catch {
-        const a = useAppStore.getState().assets.find((x) => x.symbol === sym);
-        const tick = a?.price ?? a?.lastKnownPrice;
-        if (tick != null && !cancelled) {
-          useAppStore.setState({ signalCurrentPrice: tick });
-        }
+        /* keep last live price — never substitute catalog */
       }
     };
 
@@ -263,7 +259,7 @@ export function SignalModal() {
       if (exitPrice == null) {
         setSettlement({
           outcome: 'undetermined',
-          entryPrice: signalResult.entryPrice,
+          entryPrice: useAppStore.getState().signalLockedEntryPrice ?? signalResult.entryPrice,
           exitPrice: null,
           direction: signalResult.direction,
           multiplier: martingaleMultiplier,
@@ -274,7 +270,7 @@ export function SignalModal() {
       }
       const result = settleSignal(
         signalResult.direction,
-        signalResult.entryPrice,
+        useAppStore.getState().signalLockedEntryPrice ?? signalResult.entryPrice,
         exitPrice,
         martingaleMultiplier,
       );
@@ -288,19 +284,7 @@ export function SignalModal() {
       if (Date.now() < expiryMs) return;
       if (settledRef.current) return;
 
-      let exitPrice: number | null =
-        useAppStore.getState().signalCurrentPrice ?? signalResult.entryPrice;
-
-      try {
-        const livePrice = await Promise.race([
-          api.getLivePrice(signalResult.symbol, 800).then((r) => r.price),
-          new Promise<number | null>((resolve) => setTimeout(() => resolve(null), 2500)),
-        ]);
-        if (livePrice != null && livePrice > 0) exitPrice = livePrice;
-      } catch {
-        const a = useAppStore.getState().assets.find((x) => x.symbol === signalResult.symbol);
-        exitPrice = a?.price ?? a?.lastKnownPrice ?? exitPrice;
-      }
+      const exitPrice = await fetchLivePoTick(signalResult.symbol, 3000);
       finalize(exitPrice);
     };
 
@@ -404,8 +388,11 @@ export function SignalModal() {
         return;
       }
 
+      const freshAsset =
+        useAppStore.getState().assets.find((a) => a.symbol === selectedAsset.symbol) ?? selectedAsset;
+
       const result = generateLocalSignal({
-        asset: { ...selectedAsset, payout: liveAsset?.payout ?? selectedAsset.payout },
+        asset: { ...freshAsset, payout: freshAsset.payout },
         timeframe: selectedTimeframe,
         entryPrice,
       });
@@ -651,7 +638,7 @@ export function SignalModal() {
                 />
                 <StatCard label={t.confidence} value={`${signalResult.confidence}%`} />
                 <StatCard label="RSI" value={String(signalResult.indicators.rsi)} />
-                <StatCard label={t.payout} value={`${signalResult.payout}%`} />
+                <StatCard label={t.payout} value={`${liveAsset?.payout ?? signalResult.payout}%`} />
               </div>
 
               <div className="mb-4 rounded-2xl border border-prime-gold/25 bg-black/50 p-5 text-center">

@@ -24,11 +24,13 @@ export function recordBridgeTicks(
   const now = Date.now();
   for (const a of assets) {
     if (!a.symbol) continue;
+
     if (a.live === true && typeof a.price === 'number') {
       if (!isPlausibleMarketPrice(a.price, a.symbol)) continue;
       tickStore.record(a.symbol, a.price, a.timestamp ?? now, { payout: a.payout, live: true });
       continue;
     }
+
     const catalog =
       typeof a.price === 'number'
         ? a.price
@@ -36,16 +38,10 @@ export function recordBridgeTicks(
           ? a.lastKnownPrice
           : null;
     if (catalog != null && isPlausibleMarketPrice(catalog, a.symbol)) {
-      tickStore.record(a.symbol, catalog, a.timestamp ?? now, {
-        payout: a.payout,
-        live: a.live === true,
-      });
       tickStore.setCatalogPrice(a.symbol, catalog, a.timestamp ?? now, a.payout);
     } else if (typeof a.payout === 'number') {
       const prev = tickStore.query(a.symbol, 0);
-      if (prev.latest != null) {
-        tickStore.record(a.symbol, prev.latest, now, { payout: a.payout });
-      } else if (prev.catalog != null) {
+      if (prev.catalog != null) {
         tickStore.setCatalogPrice(a.symbol, prev.catalog, now, a.payout);
       }
     }
