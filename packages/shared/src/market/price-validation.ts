@@ -25,7 +25,7 @@ function forexCrossBand(symbol: string): { min: number; max: number } | null {
   if (/CLP|COP|IDR|VND|KRW|HUF|NGN|PYG|IRR|IQD|VEF/.test(core)) {
     return { min: 0.01, max: 100_000 };
   }
-  if (/INR|TRY|RUB|CNH|BRL|MXN|LBP|PHP|THB|MYR|ZAR|ARS|PLN|CZK|DKK|SEK|NOK/.test(core)) {
+  if (/INR|TRY|RUB|CNH|BRL|MXN|LBP|PHP|THB|MYR|ZAR|ARS|PLN|CZK|DKK|SEK|NOK|MAD|KES|JOD/.test(core)) {
     return { min: 0.01, max: 5_000 };
   }
 
@@ -45,7 +45,7 @@ export function priceRangeForSymbol(symbol?: string): { min: number; max: number
   if (/CLP|COP|IDR|VND|KRW|HUF|NGN|PYG|IRR|IQD|VEF/.test(s)) {
     return { min: 0.01, max: 100_000 };
   }
-  if (/INR|TRY|RUB|CNH|BRL|MXN|LBP|PHP|THB|MYR|ZAR|ARS|PLN|CZK|DKK|SEK|NOK/.test(s)) {
+  if (/INR|TRY|RUB|CNH|BRL|MXN|LBP|PHP|THB|MYR|ZAR|ARS|PLN|CZK|DKK|SEK|NOK|MAD|KES|JOD/.test(s)) {
     return { min: 0.01, max: 5_000 };
   }
   return { min: 0.000_01, max: 25 };

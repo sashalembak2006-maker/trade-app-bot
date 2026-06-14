@@ -84,7 +84,7 @@ for i in $(seq 1 20); do
     CFG=$(echo "$MARKET" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if d.get('configured') else 'no')" 2>/dev/null || echo "?")
     ASSETS=$(echo "$MARKET" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
     echo "  [$i/20] app=$APP_VER bridge=$CFG assets=$ASSETS"
-    if [ "$APP_VER" = "1.6.0-collector-24-7" ] || { [ "$CFG" = "yes" ] && [ "${ASSETS:-0}" -gt 0 ] 2>/dev/null; }; then
+    if [ "$APP_VER" = "1.5.31-demo-prices" ] || { [ "$CFG" = "yes" ] && [ "${ASSETS:-0}" -gt 0 ] 2>/dev/null; }; then
       echo ""
       echo "✓ НОВИЙ КОД НА ПРОДІ (Bridge mode OK — collector може бути off)"
       exit 0
