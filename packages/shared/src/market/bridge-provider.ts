@@ -17,6 +17,7 @@ import {
   NoLivePriceError,
   type MarketDataProvider,
 } from './provider.js';
+import { pocketForexOtcBridgeCatalog } from './pocket-assets.js';
 import { isPlausibleMarketPrice, isForexOtcSymbol } from './price-validation.js';
 import { SyntheticPriceEngine } from './synthetic-price.js';
 import { resolveAssetFlags } from './asset-flags.js';
@@ -63,8 +64,8 @@ interface Listener {
   cb: (data: PriceUpdate) => void;
 }
 
-/** Bridge/collector should stay connected if POSTs pause briefly. */
-const HEARTBEAT_STALE_MS = 45_000;
+/** Bridge/collector should stay connected if POSTs pause briefly (Chrome MV3 SW sleep). */
+const HEARTBEAT_STALE_MS = 120_000;
 const PRICE_STALE_MS = 12_000;
 /** Non-active pairs: micro-ticks for Mini App list (~10/s). */
 const SYNTHETIC_TICK_MS = 100;
@@ -339,28 +340,33 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     });
   }
 
-  /** Latest PO quote — live tick or fresh display from bridge. */
+  /** Latest PO quote — live tick, bridge display, or catalog anchor. */
   getBridgeQuote(symbol: string, maxAgeMs = 30_000): number | null {
     const a = this.assets.get(symbol);
-    if (!a) return null;
-    if (this.isBridgeLive(a)) {
-      if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
-      if (
-        a.lastKnownPrice != null &&
-        isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
-      ) {
-        return a.lastKnownPrice;
+    if (a) {
+      if (this.isBridgeLive(a)) {
+        if (a.price != null && isPlausibleMarketPrice(a.price, a.symbol)) return a.price;
+        if (
+          a.lastKnownPrice != null &&
+          isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
+        ) {
+          return a.lastKnownPrice;
+        }
+      }
+      const display = this.displayPrice(a);
+      if (display != null) {
+        if (maxAgeMs <= 0 || a.priceUpdatedAt <= 0 || Date.now() - a.priceUpdatedAt <= maxAgeMs) {
+          return display;
+        }
+        if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
+          return a.lastKnownPrice;
+        }
       }
     }
-    const display = this.displayPrice(a);
-    if (display == null) return null;
-    if (maxAgeMs > 0 && a.priceUpdatedAt > 0 && Date.now() - a.priceUpdatedAt > maxAgeMs) {
-      if (a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)) {
-        return a.lastKnownPrice;
-      }
-      return null;
-    }
-    return display;
+    const cat = pocketForexOtcBridgeCatalog().find((c) => c.symbol === symbol);
+    const anchor = cat?.lastKnownPrice ?? cat?.price ?? null;
+    if (anchor != null && isPlausibleMarketPrice(anchor, symbol)) return anchor;
+    return null;
   }
 
   /** Latest PO quote — live tick or fresh anchored display. */
@@ -368,7 +374,17 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
     return this.getBridgeQuote(symbol, 60_000);
   }
 
-  ingest(input: BridgeAssetInput[], activeSymbol?: string | null): number {
+  ingest(
+    input: BridgeAssetInput[],
+    activeSymbol?: string | null,
+    options?: { replaceCatalog?: boolean },
+  ): number {
+    if (options?.replaceCatalog && input.length > 0 && input.length < 200) {
+      const keep = new Set(input.map((a) => a.symbol));
+      for (const sym of [...this.assets.keys()]) {
+        if (!keep.has(sym)) this.assets.delete(sym);
+      }
+    }
     const now = Date.now();
     let count = 0;
     const normalizedActive = activeSymbol?.trim() || null;
@@ -468,12 +484,19 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
       let emitPrice =
         validPrice ??
         validLkp ??
-        (effectivePrice != null && (this.isBridgeLive(stored) || isFocused) ? effectivePrice : null);
+        (effectivePrice != null ? effectivePrice : null);
       if (emitPrice == null && stored.lastKnownPrice != null) {
         const display = this.displayPrice(stored);
         if (display != null) emitPrice = display;
       }
-      if (emitPrice != null) {
+      const prevStored = prev;
+      const priceChanged =
+        emitPrice != null &&
+        (prevStored?.price !== emitPrice ||
+          prevStored?.lastKnownPrice !== stored.lastKnownPrice ||
+          isLiveTick ||
+          isFocused);
+      if (emitPrice != null && priceChanged) {
         this.emit({
           symbol: stored.symbol,
           price: emitPrice,
@@ -561,33 +584,92 @@ export class BridgeMarketDataProvider implements MarketDataProvider {
   }
 
   async getAssets(): Promise<Asset[]> {
+    this.seedCatalogAnchors();
     if (syntheticFallbackEnabled && this.assets.size > 0) {
       this.ensureSyntheticTimer();
       this.refreshAllSyntheticPrices();
     }
-    return Array.from(this.assets.values())
+    const live: Asset[] = Array.from(this.assets.values())
       .filter((a) => isForexOtcSymbol(a.symbol))
       .map((a) => {
-      const display = this.displayPrice(a);
-      return {
-      id: a.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      symbol: a.symbol,
-      name: a.symbol.replace(/ otc$/i, ''),
-      category: a.category,
-      isOTC: a.isOTC,
-      price: display,
-      lastKnownPrice:
-        a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
-          ? a.lastKnownPrice
-          : syntheticFallbackEnabled && display != null
-            ? display
-            : null,
-      payout: a.payout,
-      change: a.change,
-      flags: resolveAssetFlags(a.symbol),
-      favorite: false,
-    };
-    });
+        const display = this.displayPrice(a);
+        return {
+          id: a.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          symbol: a.symbol,
+          name: a.symbol.replace(/ otc$/i, ''),
+          category: a.category,
+          isOTC: a.isOTC,
+          price: display,
+          lastKnownPrice:
+            a.lastKnownPrice != null && isPlausibleMarketPrice(a.lastKnownPrice, a.symbol)
+              ? a.lastKnownPrice
+              : syntheticFallbackEnabled && display != null
+                ? display
+                : null,
+          payout: a.payout,
+          change: a.change,
+          flags: resolveAssetFlags(a.symbol),
+          favorite: false,
+        };
+      });
+    return [...live, ...this.extensionCatalogRows()];
+  }
+
+  /** Chrome extension mode — full OTC list with payout; catalog anchor when no live tick. */
+  private extensionCatalogRows(): Asset[] {
+    if (this.assets.size >= 80) return [];
+    const have = new Set(this.assets.keys());
+    const rows: Asset[] = [];
+    for (const c of pocketForexOtcBridgeCatalog()) {
+      if (have.has(c.symbol)) continue;
+      const anchor = c.lastKnownPrice ?? c.price ?? null;
+      const display =
+        anchor != null && isPlausibleMarketPrice(anchor, c.symbol) ? anchor : null;
+      rows.push({
+        id: c.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        symbol: c.symbol,
+        name: c.symbol.replace(/ otc$/i, ''),
+        category: 'forex_otc',
+        isOTC: true,
+        price: display,
+        lastKnownPrice: display,
+        payout: c.payout,
+        change: 0,
+        flags: resolveAssetFlags(c.symbol),
+        favorite: false,
+      });
+    }
+    return rows;
+  }
+
+  /** Seed static PO catalog anchors so signals/list work before pair focus. */
+  private seedCatalogAnchors(): void {
+    if (this.assets.size >= 120) return;
+    const now = Date.now();
+    for (const c of pocketForexOtcBridgeCatalog()) {
+      const anchor = c.lastKnownPrice ?? c.price ?? null;
+      if (anchor == null || !isPlausibleMarketPrice(anchor, c.symbol)) continue;
+      const prev = this.assets.get(c.symbol);
+      if (prev?.bridgeLiveAt && Date.now() - prev.bridgeLiveAt < 5000) continue;
+      if (prev && this.isBridgeLive(prev)) continue;
+      const stored: StoredAsset = {
+        symbol: c.symbol,
+        price: syntheticFallbackEnabled ? (prev?.price ?? anchor) : (prev?.price ?? null),
+        lastKnownPrice: prev?.lastKnownPrice ?? anchor,
+        priceUpdatedAt: prev?.priceUpdatedAt ?? now,
+        bridgeLiveAt: prev?.bridgeLiveAt ?? 0,
+        payout: prev?.payout ?? c.payout ?? 92,
+        change: prev?.change ?? 0,
+        category: prev?.category ?? 'forex_otc',
+        isOTC: true,
+        updatedAt: prev?.updatedAt ?? now,
+      };
+      this.assets.set(c.symbol, stored);
+      if (syntheticFallbackEnabled && !this.synthetic.has(c.symbol)) {
+        this.synthetic.anchor(c.symbol, stored.lastKnownPrice ?? anchor);
+      }
+    }
+    if (syntheticFallbackEnabled && this.assets.size > 0) this.ensureSyntheticTimer();
   }
 
   private requireConfigured(): void {

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import type { Asset } from '../../types';
+import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
 import { formatPercentChange } from '../../utils/format';
 import { isPlausibleAssetPrice } from '../../utils/price-validation';
 import { AssetIcon } from '../ui/AssetIcon';
@@ -25,12 +26,21 @@ function AssetRow({
   const prevRef = useRef<number | null>(null);
   const [flash, setFlash] = useState(false);
 
-  const displayPrice =
+  const seedPrice =
     a.price != null && isPlausibleAssetPrice(a.price, a.symbol)
       ? a.price
       : a.lastKnownPrice != null && isPlausibleAssetPrice(a.lastKnownPrice, a.symbol)
         ? a.lastKnownPrice
         : null;
+
+  const { price: tickPrice, payout: tickPayout } = useAssetTickPrice(a.symbol, a.payout, seedPrice);
+
+  const displayPrice =
+    tickPrice != null && isPlausibleAssetPrice(tickPrice, a.symbol)
+      ? tickPrice
+      : seedPrice;
+
+  const displayPayout = tickPayout > 0 ? tickPayout : a.payout;
 
   useEffect(() => {
     if (displayPrice == null) return;
@@ -75,7 +85,7 @@ function AssetRow({
             <p className="text-[10px] text-slate-600">{priceOnSignalStart}</p>
           )}
           <p className="text-xs font-bold text-prime-gold">
-            {a.payout > 0 ? `${a.payout}%` : '—'}
+            {displayPayout > 0 ? `${displayPayout}%` : '—'}
           </p>
           {displayPrice != null && a.change !== 0 && (
             <p className={`text-[10px] font-semibold ${a.change >= 0 ? 'text-neon-green' : 'text-red-400'}`}>

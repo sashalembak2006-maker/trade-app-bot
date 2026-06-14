@@ -40,7 +40,8 @@ router.post('/assets/update', (req, res) => {
         : null;
 
     const bridge = getBridgeProvider();
-    const accepted = bridge.ingest(assets, activeSymbol);
+    const fromExtension = source !== 'vps-collector';
+    const accepted = bridge.ingest(assets, activeSymbol, { replaceCatalog: fromExtension });
     const sanitized = bridge.sanitize();
     if (sanitized > 0) {
       log.warn('Bridge sanitized corrupted prices', { sanitized });

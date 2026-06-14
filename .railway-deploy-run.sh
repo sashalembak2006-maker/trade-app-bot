@@ -49,7 +49,10 @@ AUTHEOF
     "MARKET_DATA_MODE=platform" \
     "PLATFORM_SYNTHETIC_FALLBACK=false" \
     "BRIDGE_ANCHORED_PULSE=false" \
-    "SIGNAL_PRICE_WAIT_MS=2200" \
+    "COLLECTOR_ENABLED=true" \
+    "COLLECTOR_PUSH_INTERVAL_MS=100" \
+    "OTC_STREAM_MS=250" \
+    "SIGNAL_PRICE_WAIT_MS=3000" \
     "SIGNAL_FOCUS_GRACE_MS=600"
   do
     run_with_timeout 25 $CLI variables set "$pair" --service prime-trade 2>/dev/null \
@@ -71,17 +74,19 @@ fi
 echo ""
 echo "SUCCESS: білд запущено"
 echo ""
-echo "Чекаю version 1.5.14-po-exact..."
+echo "Чекаю deploy (Bridge stream mode або collector)..."
 for i in $(seq 1 20); do
   sleep 20
-  STATUS=$(curl -sf --max-time 8 "https://prime-trade-production.up.railway.app/api/collector/status" 2>/dev/null || echo "")
-  if [ -n "$STATUS" ]; then
-    VER=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
-    ASSETS=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
-    echo "  [$i/20] version=$VER assetCount=$ASSETS"
-    if [ "$VER" = "1.5.14-po-exact" ]; then
+  HEALTH=$(curl -sf --max-time 8 "https://prime-trade-production.up.railway.app/api/health" 2>/dev/null || echo "")
+  MARKET=$(curl -sf --max-time 8 "https://prime-trade-production.up.railway.app/api/market/status" 2>/dev/null || echo "")
+  if [ -n "$HEALTH" ] && [ -n "$MARKET" ]; then
+    APP_VER=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('appVersion','?'))" 2>/dev/null || echo "?")
+    CFG=$(echo "$MARKET" | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if d.get('configured') else 'no')" 2>/dev/null || echo "?")
+    ASSETS=$(echo "$MARKET" | python3 -c "import sys,json; print(json.load(sys.stdin).get('assetCount',0))" 2>/dev/null || echo "?")
+    echo "  [$i/20] app=$APP_VER bridge=$CFG assets=$ASSETS"
+    if [ "$APP_VER" = "1.6.0-collector-24-7" ] || { [ "$CFG" = "yes" ] && [ "${ASSETS:-0}" -gt 0 ] 2>/dev/null; }; then
       echo ""
-      echo "✓ НОВИЙ КОД НА ПРОДІ!"
+      echo "✓ НОВИЙ КОД НА ПРОДІ (Bridge mode OK — collector може бути off)"
       exit 0
     fi
   else

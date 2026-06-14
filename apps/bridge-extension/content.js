@@ -1540,7 +1540,51 @@
     }
   }
 
-  function startCategoryRotation() {
+  /** Stream/TikTok: never redirect PO or rotate tabs — chart + WS focus only. */
+  let streamMode = true;
+  let otcScanEnabled = false;
+  try {
+    chrome.storage?.local?.get({ prime_bridge_otc_scan: false, prime_bridge_stream_mode: true }, (bag) => {
+      otcScanEnabled = bag.prime_bridge_otc_scan === true;
+      streamMode = bag.prime_bridge_stream_mode !== false;
+    });
+    chrome.storage?.onChanged?.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (changes.prime_bridge_otc_scan) otcScanEnabled = changes.prime_bridge_otc_scan.newValue === true;
+      if (changes.prime_bridge_stream_mode) streamMode = changes.prime_bridge_stream_mode.newValue !== false;
+    });
+  } catch {
+    streamMode = true;
+    otcScanEnabled = false;
+  }
+
+  const OTC_STREAM_MS = 320;
+  const otcStream = { scanPausedUntil: 0, scanIndex: 0, widget: null };
+
+  function displayToPoAsset(symbol) {
+    const isOtc = /\s+OTC$/i.test(symbol);
+    const base = symbol.replace(/\s+OTC$/i, '').trim();
+    if (/^[A-Z]{3}\/[A-Z]{3}$/i.test(base)) {
+      return base.replace('/', '').toUpperCase() + (isOtc ? '_otc' : '');
+    }
+    return base.replace(/\s+/g, '_').replace(/\//g, '') + (isOtc ? '_otc' : '');
+  }
+
+  function requestPoChangeSymbol(displaySymbol) {
+    const poAsset = displayToPoAsset(displaySymbol);
+    window.postMessage(
+      { source: 'prime-bridge-cmd', type: 'changeSymbol', poAsset, displaySymbol },
+      '*',
+    );
+    wsActiveSymbol = displaySymbol;
+  }
+
+  function startBridgeBootstrap() {
+    setInterval(() => sendMessageSafe({ type: 'bridge-keepalive' }), 3000);
+    if (streamMode) {
+      console.log('[PRIME Bridge] Stream mode — no demo redirect, no tab rotation, no DOM focus clicks');
+      return;
+    }
     setTimeout(() => {
       navigateToDemoIfNeeded();
       const p = (location.pathname || '').toLowerCase();
@@ -1549,55 +1593,60 @@
         return;
       }
       ensureAssetCatalogOpen();
-      // PO WebSocket updateAssets = only the open catalog tab — rotate to collect all categories.
       setTimeout(() => {
         rotateCategoryTab();
         setInterval(rotateCategoryTab, CATEGORY_ROTATE_MS);
       }, 1500);
     }, 2000);
-    setInterval(() => {
-      sendMessageSafe({ type: 'bridge-keepalive' });
-    }, 3000);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startCategoryRotation);
+    document.addEventListener('DOMContentLoaded', startBridgeBootstrap);
   } else {
-    startCategoryRotation();
+    startBridgeBootstrap();
+  }
+
+  function tryFocusSymbolDomClick(targetSymbol) {
+    if (!targetSymbol) return false;
+    ensureAssetCatalogOpen();
+    const rows = new Set();
+    for (const sel of LIST_ROW_SELECTORS) {
+      document.querySelectorAll(sel).forEach((r) => rows.add(r));
+    }
+    document
+      .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="assets-list"]')
+      .forEach((container) => {
+        container.querySelectorAll('[class*="item"], li, a, button').forEach((r) => rows.add(r));
+      });
+    for (const row of rows) {
+      const sym = findSymbolInRow(row);
+      if (sym && symbolsMatch(sym, targetSymbol)) {
+        row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        if (typeof row.click === 'function') row.click();
+        wsActiveSymbol = sym;
+        console.log('[PRIME Bridge] focus click →', sym);
+        setTimeout(tick, 200);
+        setTimeout(tick, 600);
+        return true;
+      }
+    }
+    return false;
   }
 
   function tryFocusSymbol(targetSymbol) {
     if (!targetSymbol) return false;
-    ensureAssetCatalogOpen();
-    const attempt = () => {
-      const rows = new Set();
-      for (const sel of LIST_ROW_SELECTORS) {
-        document.querySelectorAll(sel).forEach((r) => rows.add(r));
-      }
-      document
-        .querySelectorAll('.assets-block, .alist, [class*="assets-block"], [class*="assets-list"]')
-        .forEach((container) => {
-          container.querySelectorAll('[class*="item"], li, a, button').forEach((r) => rows.add(r));
-        });
-      for (const row of rows) {
-        const sym = findSymbolInRow(row);
-        if (sym && symbolsMatch(sym, targetSymbol)) {
-          row.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-          if (typeof row.click === 'function') row.click();
-          wsActiveSymbol = sym;
-          console.log('[PRIME Bridge] focus click →', sym);
-          setTimeout(tick, 200);
-          setTimeout(tick, 600);
-          setTimeout(tick, 1200);
-          return true;
-        }
-      }
-      return false;
-    };
-    if (attempt()) return true;
-    setTimeout(attempt, 500);
-    setTimeout(attempt, 1200);
-    return false;
+    requestPoChangeSymbol(targetSymbol);
+    wsActiveSymbol = targetSymbol;
+    console.log('[PRIME Bridge] focus →', targetSymbol);
+    setTimeout(tick, 150);
+    setTimeout(tick, 450);
+    setTimeout(tick, 900);
+    if (streamMode) {
+      setTimeout(() => tryFocusSymbolDomClick(targetSymbol), 250);
+      setTimeout(() => tryFocusSymbolDomClick(targetSymbol), 900);
+      return true;
+    }
+    return tryFocusSymbolDomClick(targetSymbol);
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -1622,32 +1671,6 @@
   });
 
   console.log('[PRIME Bridge] content script active on', location.host);
-
-  /** OTC Live Stream — rotates changeSymbol across all forex OTC pairs for real PO ticks. */
-  const OTC_STREAM_MS = 320;
-  const otcStream = {
-    scanPausedUntil: 0,
-    scanIndex: 0,
-    widget: null,
-  };
-
-  function displayToPoAsset(symbol) {
-    const isOtc = /\s+OTC$/i.test(symbol);
-    const base = symbol.replace(/\s+OTC$/i, '').trim();
-    if (/^[A-Z]{3}\/[A-Z]{3}$/i.test(base)) {
-      return base.replace('/', '').toUpperCase() + (isOtc ? '_otc' : '');
-    }
-    return base.replace(/\s+/g, '_').replace(/\//g, '') + (isOtc ? '_otc' : '');
-  }
-
-  function requestPoChangeSymbol(displaySymbol) {
-    const poAsset = displayToPoAsset(displaySymbol);
-    window.postMessage(
-      { source: 'prime-bridge-cmd', type: 'changeSymbol', poAsset, displaySymbol },
-      '*',
-    );
-    wsActiveSymbol = displaySymbol;
-  }
 
   function countOtcWithPrice() {
     let n = 0;
@@ -1683,8 +1706,9 @@
     const l2 = otcStream.widget.querySelector('#prime-otc-stream-line2');
     if (l1) l1.textContent = `${priced}/${total} OTC · live`;
     if (l2) {
-      l2.textContent =
-        Date.now() < otcStream.scanPausedUntil
+      l2.textContent = streamMode || !otcScanEnabled
+        ? `stream · ${currentSym || wsActiveSymbol || '—'}`
+        : Date.now() < otcStream.scanPausedUntil
           ? `сигнал: ${currentSym || '—'}`
           : currentSym
             ? `scan → ${currentSym.replace(/\s+OTC$/i, '')}`
@@ -1700,6 +1724,10 @@
 
   function tickOtcStream() {
     if (!isTradingTerminal()) return;
+    if (!otcScanEnabled) {
+      updateOtcStreamWidget(otcSymbolQueue().length, countOtcWithPrice(), wsActiveSymbol);
+      return;
+    }
     if (Date.now() < otcStream.scanPausedUntil) {
       updateOtcStreamWidget(otcSymbolQueue().length, countOtcWithPrice(), wsActiveSymbol);
       return;

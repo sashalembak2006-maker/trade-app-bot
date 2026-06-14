@@ -11,13 +11,6 @@ function secret() {
   return ($('secret').value.trim() || DEFAULTS.secret);
 }
 
-async function load() {
-  const cfg = await chrome.storage.local.get(DEFAULTS);
-  $('backendUrl').value = BridgeHttp.normalizeBackendUrl(cfg.backendUrl ?? DEFAULTS.backendUrl);
-  $('secret').value = cfg.secret ?? DEFAULTS.secret;
-  renderLive();
-}
-
 function isRecent(ts, ms) {
   return ts && Date.now() - ts < ms;
 }
@@ -27,15 +20,15 @@ async function renderLive() {
     'lastStatus', 'lastStatusAt', 'lastHeartbeatAt',
     'lastPostSuccessAt', 'lastPostError',
     'lastAsset', 'lastPrice', 'lastPayout', 'lastHost', 'lastPath',
-    'lastFrame', 'lastScrapeCount',
+    'lastFrame', 'lastScrapeCount', 'poTabCount',
     'poAuthFrame', 'poAuthCapturedAt',
   ]);
 
+  const poTabs = data.poTabCount ?? 0;
   const heartbeatOk = isRecent(data.lastHeartbeatAt, 15000);
-  const scrapeOk = (data.lastScrapeCount ?? 0) >= 1;
-  const postOk =
-    isRecent(data.lastPostSuccessAt, BridgeHttp.POST_OK_WINDOW_MS ?? 25000) ||
-    (isRecent(data.lastPostSuccessAt, 45000) && heartbeatOk && scrapeOk);
+  const scrapeOk = heartbeatOk && (data.lastScrapeCount ?? 0) >= 1;
+  const postOk = isRecent(data.lastPostSuccessAt, BridgeHttp.POST_OK_WINDOW_MS ?? 25000);
+  const cachedOnly = !heartbeatOk;
 
   const box = $('statusBox');
   let statusText = 'Status: Not connected';
@@ -47,6 +40,14 @@ async function renderLive() {
     box.className = 'status ok';
     hint = data.lastStatus ?? 'POST OK — бот оновлюється';
     if (data.lastPostError) hint += ` (retry: ${data.lastPostError})`;
+  } else if (poTabs === 0 && !scrapeOk) {
+    statusText = 'Status: PO вкладка закрита';
+    box.className = 'status bad';
+    hint = 'Натисни «Відкрити PO (F5)» — має бути вкладка pocketoption.com у цьому Chrome';
+  } else if (poTabs > 0 && !scrapeOk) {
+    statusText = 'Status: PO відкритий, немає даних';
+    box.className = 'status warn';
+    hint = 'На вкладці PO натисни F5 → зачекай 3 сек → Reload розширення (↻)';
   } else if (heartbeatOk && scrapeOk && !postOk) {
     statusText = 'Status: Надсилаємо…';
     box.className = 'status warn';
@@ -60,16 +61,20 @@ async function renderLive() {
     box.className = 'status bad';
     hint = data.lastStatus || 'Натисни «Перевірити backend»';
   } else {
-    hint = 'Відкрий Pocket Option → F5 → Reload розширення (↻)';
-    if (data.lastStatus) hint = `${data.lastStatus} — ${hint}`;
+    hint = 'Reload розширення (↻) → «Відкрити PO (F5)» → «Перевірити backend»';
   }
 
   $('status').textContent = statusText;
   const path = data.lastPath ? ` ${data.lastPath}` : '';
-  $('pageHost').textContent = data.lastHost ? `${data.lastHost}${path} (${data.lastFrame || '?'})` : '—';
-  $('scrapeCount').textContent = heartbeatOk ? String(data.lastScrapeCount ?? 0) : '—';
-  $('lastAsset').textContent = data.lastAsset ?? '—';
-  $('lastPrice').textContent = data.lastPrice != null ? String(data.lastPrice) : '—';
+  if (poTabs === 0 && !heartbeatOk) {
+    $('pageHost').textContent = 'немає вкладки PO';
+  } else {
+    $('pageHost').textContent = data.lastHost ? `${data.lastHost}${path} (${data.lastFrame || '?'})` : '—';
+  }
+  $('scrapeCount').textContent = scrapeOk ? String(data.lastScrapeCount ?? 0) : cachedOnly ? '—' : '0';
+  $('lastAsset').textContent = cachedOnly && data.lastAsset ? `${data.lastAsset} (кеш)` : data.lastAsset ?? '—';
+  $('lastPrice').textContent =
+    cachedOnly && data.lastPrice != null ? `${data.lastPrice} (кеш)` : data.lastPrice != null ? String(data.lastPrice) : '—';
   $('lastPayout').textContent = data.lastPayout != null ? data.lastPayout + '%' : '—';
   $('hint').textContent = hint;
   const authEl = $('authHint');
@@ -82,12 +87,43 @@ async function renderLive() {
   }
 }
 
+async function load() {
+  const cfg = await chrome.storage.local.get(DEFAULTS);
+  $('backendUrl').value = BridgeHttp.normalizeBackendUrl(cfg.backendUrl ?? DEFAULTS.backendUrl);
+  $('secret').value = cfg.secret ?? DEFAULTS.secret;
+  try {
+    await chrome.runtime.sendMessage({ type: 'bridge-wake-po' });
+  } catch {
+    /* SW starting */
+  }
+  renderLive();
+}
+
+$('openPo').addEventListener('click', async () => {
+  $('hint').textContent = 'Відкриваю PO…';
+  try {
+    await chrome.runtime.sendMessage({ type: 'bridge-open-po' });
+    $('hint').textContent = 'PO відкрито → зачекай 5 сек → «Перевірити backend»';
+    setTimeout(async () => {
+      try {
+        await chrome.runtime.sendMessage({ type: 'bridge-wake-po' });
+      } catch {
+        /* ignore */
+      }
+      renderLive();
+    }, 5000);
+  } catch (e) {
+    $('hint').textContent = `Помилка: ${e.message}`;
+  }
+});
+
 $('test').addEventListener('click', async () => {
   const url = baseUrl();
   $('backendUrl').value = url;
   await chrome.storage.local.set({ backendUrl: url, secret: secret() });
   $('hint').textContent = 'Перевірка…';
   try {
+    await chrome.runtime.sendMessage({ type: 'bridge-wake-po' });
     const resp = await BridgeHttp.testBackend(secret());
     if (resp.ok) {
       const merged = await BridgeHttp.getMergedFromBackground();
@@ -97,7 +133,9 @@ $('test').addEventListener('click', async () => {
       } else {
         await BridgeHttp.markPostResult({ ok: true, accepted: 1 }, 1);
       }
-      $('hint').textContent = `Backend OK ✓ POST OK (${resp.url})`;
+      $('hint').textContent = merged?.assets?.length
+        ? `Backend OK ✓ POST OK (${merged.assets.length} assets)`
+        : `Backend OK ✓ (POST test) — відкрий PO для live-цін`;
     } else {
       await BridgeHttp.markPostResult({ ok: false, error: resp.error }, 0);
       $('hint').textContent = `FAIL: ${resp.error}`;
@@ -154,11 +192,13 @@ $('save').addEventListener('click', async () => {
   await chrome.storage.local.set({
     backendUrl: url,
     secret: sec,
+    prime_bridge_stream_mode: true,
+    prime_bridge_otc_scan: false,
     lastPostError: '',
     lastPostSuccessAt: 0,
   });
   $('status').textContent = 'Збережено ✓';
-  $('hint').textContent = 'Натисни «Перевірити backend»';
+  $('hint').textContent = 'Натисни «Відкрити PO (F5)» → «Перевірити backend»';
   setTimeout(renderLive, 300);
 });
 

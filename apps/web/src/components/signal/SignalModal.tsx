@@ -8,18 +8,52 @@ import { hapticFeedback, hapticSuccess } from '../../services/telegram';
 import { useTelegram } from '../../hooks/useTelegram';
 import { useCountdown } from '../../hooks/useCountdown';
 import {
+  buildSettlement,
   deriveRiskLevel,
   nextMartingaleMultiplier,
   overlayNumberFromMultiplier,
-  settleSignal,
   timeframeToMs,
 } from '../../utils/signal-settlement';
-import { fetchFreshPoPrice, fetchLivePoTick, generateLocalSignal, readPoLivePrice, recordSignalBackground } from '../../services/local-signal';
+import {
+  fetchLivePoTick,
+  fetchVerifiedPoPrice,
+  generateLocalSignal,
+  readPoLivePrice,
+  refreshPoPriceBackground,
+  resolveEntryPrice,
+  timeoutFailure,
+  type PriceVerifyFailure,
+  recordSignalBackground,
+} from '../../services/local-signal';
+import { useAssetTickPrice } from '../../hooks/useAssetTickPrice';
+import { logSignalEvent } from '../../services/signal-log';
+import type { SignalStatus } from '../../types';
 import { SignalAnalysisLoader } from './SignalAnalysisLoader';
 
 const TIMEFRAMES = ['3s', '5s', '15s', '30s', '1m', '2m', '3m', '5m', '15m', '30m', '1h', '4h'];
-const ANALYSIS_DURATION_MS = 4000;
-const COVERAGE_ANALYSIS_MS = 2500;
+const ANALYSIS_DURATION_MS = 3500;
+const SIGNAL_HARD_DEADLINE_MS = 6500;
+const COVERAGE_ANALYSIS_MS = 2200;
+const SETTLE_MAX_MS = 3200;
+
+function mapVerifyError(failure: PriceVerifyFailure, t: ReturnType<typeof useT>): string {
+  if (failure.code === 'TIMEOUT') return t.errorTimeout;
+  if (failure.code === 'DRIFT') return t.priceDriftError;
+  if (failure.code === 'NOT_LIVE') return t.priceNotLiveError;
+  return t.openAssetOnPlatform;
+}
+
+function statusLabel(status: SignalStatus, t: ReturnType<typeof useT>): string {
+  switch (status) {
+    case 'ACTIVE': return t.signalStatusActive;
+    case 'WIN': return t.signalStatusWin;
+    case 'LOSS': return t.signalStatusLoss;
+    case 'NEED_COVER': return t.signalStatusNeedCover;
+    case 'COVER_WIN': return t.signalStatusCoverWin;
+    case 'COVER_LOSS': return t.signalStatusCoverLoss;
+    default: return status;
+  }
+}
 
 /** Cancel stale in-flight signal requests when user retries. */
 let activeSignalAbort: AbortController | null = null;
@@ -157,7 +191,7 @@ export function SignalModal() {
     setSettlement, setMartingaleMultiplier, resetSignalSession,
     setLoadingStep, loadingStep, setSelectedTimeframe, language,
     signalError, setSignalError, marketStatus, setMarketStatus, setAssets,
-    signalCurrentPrice, signalLockedEntryPrice, accessStatus, assets,
+    signalCurrentPrice, signalLockedEntryPrice, accessStatus, assets, signalStatus,
   } = useAppStore();
   const t = useT(language);
   useTelegram();
@@ -167,6 +201,15 @@ export function SignalModal() {
   const liveAsset =
     selectedAsset &&
     (assets.find((a) => a.symbol === selectedAsset.symbol) ?? selectedAsset);
+
+  const seedPrice =
+    liveAsset?.price ?? liveAsset?.lastKnownPrice ?? null;
+  const { price: modalTickPrice } = useAssetTickPrice(
+    liveAsset?.symbol ?? '',
+    liveAsset?.payout ?? 0,
+    seedPrice,
+  );
+  const headerPrice = modalTickPrice ?? seedPrice;
 
   useEffect(() => {
     return () => abortActiveSignalRequest();
@@ -181,28 +224,26 @@ export function SignalModal() {
     return () => clearInterval(id);
   }, [selectedAsset?.symbol]);
 
-  // Warm live PO stream during analysis + countdown prep.
+  // Live PO price during countdown / settlement prep.
   useEffect(() => {
-    if ((signalPhase !== 'loading' && signalPhase !== 'result') || !selectedAsset) return;
+    if ((signalPhase !== 'result' && signalPhase !== 'settling') || !selectedAsset) return;
     const sym = selectedAsset.symbol;
     let cancelled = false;
 
     const pump = async () => {
-      try {
-        const price = await readPoLivePrice(sym);
-        if (cancelled || price == null) return;
-        useAppStore.setState({ signalCurrentPrice: price });
-        const row = useAppStore.getState().assets.find((a) => a.symbol === sym);
-        if (row) useAppStore.getState().updateAssetPrice(sym, price, row.payout, row.change);
-      } catch { /* keep last */ }
+      const price = await readPoLivePrice(sym, { network: true });
+      if (cancelled || price == null) return;
+      useAppStore.setState({ signalCurrentPrice: price });
     };
 
     void api.requestFocus(sym, 120_000).catch(() => {});
     void pump();
-    const id = setInterval(pump, 100);
+    const id = setInterval(() => void pump(), 350);
+    const focusId = setInterval(() => void api.requestFocus(sym, 120_000).catch(() => {}), 1500);
     return () => {
       cancelled = true;
       clearInterval(id);
+      clearInterval(focusId);
     };
   }, [signalPhase, selectedAsset?.symbol]);
 
@@ -214,68 +255,41 @@ export function SignalModal() {
     settledRef.current = false;
   }, [signalResult?.id]);
 
-  // Live price during countdown — poll bridge every 400ms (WS alone can freeze).
+  // Auto-settle when countdown expires.
   useEffect(() => {
-    if (signalPhase !== 'result' || !signalResult) return;
-    const sym = signalResult.symbol;
-    let cancelled = false;
-
-    const pollLive = async () => {
-      try {
-        const price = await readPoLivePrice(sym);
-        if (cancelled || price == null) return;
-        useAppStore.setState({ signalCurrentPrice: price });
-        const asset = useAppStore.getState().assets.find((a) => a.symbol === sym);
-        if (asset) {
-          useAppStore.getState().updateAssetPrice(sym, price, asset.payout, asset.change);
-        }
-      } catch {
-        /* keep last live price — never substitute catalog */
-      }
-    };
-
-    void api.requestFocus(sym, 120_000).catch(() => {});
-    pollLive();
-    const priceId = setInterval(pollLive, 100);
-    const focusId = setInterval(() => void api.requestFocus(sym, 120_000).catch(() => {}), 1000);
-    return () => {
-      cancelled = true;
-      clearInterval(priceId);
-      clearInterval(focusId);
-    };
-  }, [signalPhase, signalResult?.symbol]);
-
-  // Settle only after the full countdown — never on the first render (seconds was 0).
-  useEffect(() => {
-    if (signalPhase !== 'result' || !signalResult) return;
+    if (signalPhase !== 'result' && signalPhase !== 'settling') return;
+    if (!signalResult) return;
     if (settledRef.current) return;
 
     const expiryMs = new Date(signalResult.expiresAt).getTime();
     if (!Number.isFinite(expiryMs)) return;
 
-    const finalize = (exitPrice: number | null) => {
+    const entryForSettle =
+      martingaleMultiplier > 1
+        ? signalResult.entryPrice
+        : signalLockedEntryPrice ?? signalResult.entryPrice;
+
+    const finalize = (exitPrice: number | null, apiPrice: number | null) => {
       if (settledRef.current) return;
       settledRef.current = true;
-      if (exitPrice == null) {
-        setSettlement({
-          outcome: 'undetermined',
-          entryPrice: useAppStore.getState().signalLockedEntryPrice ?? signalResult.entryPrice,
-          exitPrice: null,
-          direction: signalResult.direction,
-          multiplier: martingaleMultiplier,
-        });
-        setSignalPhase('settled');
-        hapticFeedback('heavy');
-        return;
-      }
-      const result = settleSignal(
+      const result = buildSettlement(
         signalResult.direction,
-        useAppStore.getState().signalLockedEntryPrice ?? signalResult.entryPrice,
+        entryForSettle,
         exitPrice,
         martingaleMultiplier,
       );
       setSettlement(result);
       setSignalPhase('settled');
+      logSignalEvent('settle_ok', {
+        symbol: signalResult.symbol,
+        direction: signalResult.direction,
+        entry: entryForSettle,
+        exit: exitPrice,
+        apiPrice,
+        status: result.status,
+        multiplier: martingaleMultiplier,
+        expiresAt: signalResult.expiresAt,
+      });
       if (result.outcome === 'win') hapticSuccess();
       else hapticFeedback('heavy');
     };
@@ -283,15 +297,39 @@ export function SignalModal() {
     const trySettle = async () => {
       if (Date.now() < expiryMs) return;
       if (settledRef.current) return;
+      setSignalPhase('settling');
+      logSignalEvent('settle_start', {
+        symbol: signalResult.symbol,
+        entry: entryForSettle,
+        expiresAt: signalResult.expiresAt,
+        multiplier: martingaleMultiplier,
+      });
 
-      const exitPrice = await fetchLivePoTick(signalResult.symbol, 3000);
-      finalize(exitPrice);
+      const verified = await Promise.race([
+        fetchVerifiedPoPrice(signalResult.symbol, SETTLE_MAX_MS),
+        new Promise<PriceVerifyFailure>((resolve) =>
+          setTimeout(
+            () => resolve({ ok: false, code: 'TIMEOUT', storePrice: null, apiPrice: null }),
+            SETTLE_MAX_MS,
+          ),
+        ),
+      ]);
+
+      const exitPrice = verified.ok ? verified.data.price : await fetchLivePoTick(signalResult.symbol, 600);
+      finalize(exitPrice, verified.ok ? verified.data.price : null);
     };
 
     void trySettle();
-    const id = setInterval(() => void trySettle(), 250);
+    const id = setInterval(() => void trySettle(), 200);
     return () => clearInterval(id);
-  }, [signalPhase, signalResult, martingaleMultiplier, setSettlement, setSignalPhase]);
+  }, [
+    signalPhase,
+    signalResult,
+    martingaleMultiplier,
+    signalLockedEntryPrice,
+    setSettlement,
+    setSignalPhase,
+  ]);
 
   useEffect(() => {
     if (signalPhase !== 'loading') return;
@@ -339,11 +377,41 @@ export function SignalModal() {
 
   const runAnalysisAnimation = (minMs = ANALYSIS_DURATION_MS) =>
     new Promise<void>((resolve) => {
-      setSignalPhase('loading');
       setLoadingStep(0);
       setLoadingTitle(t.analyzingMarket);
       setTimeout(resolve, minMs);
     });
+
+  const emitSignal = (entryPrice: number, meta?: { source?: string; storePrice?: number | null }) => {
+    if (!selectedAsset) return;
+    const freshAsset =
+      useAppStore.getState().assets.find((a) => a.symbol === selectedAsset.symbol) ?? selectedAsset;
+    const result = generateLocalSignal({
+      asset: { ...freshAsset, payout: freshAsset.payout },
+      timeframe: selectedTimeframe,
+      entryPrice,
+    });
+    const durationMs = timeframeToMs(selectedTimeframe);
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + durationMs).toISOString();
+    void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
+    beginSignalResult({ ...result, expiresAt, createdAt });
+    recordSignalBackground({ ...result, expiresAt, createdAt });
+    logSignalEvent('create_ok', {
+      symbol: selectedAsset.symbol,
+      direction: result.direction,
+      entryPrice,
+      apiPrice: entryPrice,
+      storePrice: meta?.storePrice ?? null,
+      source: meta?.source,
+      createdAt,
+      expiresAt,
+      timeframe: selectedTimeframe,
+      confidence: result.confidence,
+    });
+    hapticSuccess();
+    logger.info('Signal', 'received', result.direction, `${result.confidence}%`, entryPrice);
+  };
 
   const handleGetSignal = async (opts?: { keepMultiplier?: boolean }) => {
     if (!selectedAsset) return;
@@ -372,37 +440,57 @@ export function SignalModal() {
     setSignalPhase('loading');
     setLoadingStep(0);
     setLoadingTitle(t.analyzingMarket);
+    logSignalEvent('create_start', { symbol: selectedAsset.symbol, timeframe: selectedTimeframe });
     logger.info('Signal', 'local generate', selectedAsset.symbol, selectedTimeframe);
 
     void api.requestFocus(selectedAsset.symbol, 120_000).catch(() => {});
 
-    try {
-      await runAnalysisAnimation(ANALYSIS_DURATION_MS);
-      if (abort.signal.aborted) return;
+    // Price fetch runs in parallel with animation — never block past hard deadline.
+    const pricePromise = fetchVerifiedPoPrice(selectedAsset.symbol, 4500);
 
-      const entryPrice = await fetchFreshPoPrice(selectedAsset.symbol);
-      if (entryPrice == null) {
-        setSignalError(t.openAssetOnPlatform);
+    let finished = false;
+    const finish = (verified: Awaited<ReturnType<typeof fetchVerifiedPoPrice>>) => {
+      if (finished || abort.signal.aborted) return;
+      finished = true;
+      if (!verified.ok) {
+        logSignalEvent('create_fail', { symbol: selectedAsset!.symbol, code: verified.code });
+        const ms = useAppStore.getState().marketStatus;
+        const bridgeOk = ms?.configured === true && (ms?.assetCount ?? 0) > 0;
+        const collectorOk = ms?.collectorOnline === true && ms?.collectorWsConnected === true;
+        const collectorDead =
+          !bridgeOk &&
+          (ms?.collectorWsConnected === false ||
+            /auth|notauthorized|refresh PO_AUTH/i.test(ms?.collectorMessage ?? ''));
+        let errText = mapVerifyError(verified, t);
+        if (verified.code === 'NO_PRICE') {
+          const fallback = resolveEntryPrice(selectedAsset!.symbol, selectedAsset);
+          if (fallback != null) {
+            emitSignal(fallback, { source: 'bridge_api', storePrice: fallback });
+            return;
+          }
+          errText = collectorOk || bridgeOk ? t.collectorPriceWait : t.collectorAuthExpired;
+        } else if (collectorDead) {
+          errText = t.collectorAuthExpired;
+        }
+        setSignalError(errText);
         setSignalPhase('idle');
         hapticFeedback('heavy');
         return;
       }
-
-      const freshAsset =
-        useAppStore.getState().assets.find((a) => a.symbol === selectedAsset.symbol) ?? selectedAsset;
-
-      const result = generateLocalSignal({
-        asset: { ...freshAsset, payout: freshAsset.payout },
-        timeframe: selectedTimeframe,
-        entryPrice,
+      emitSignal(verified.data.price, {
+        source: verified.data.source,
+        storePrice: verified.data.storePrice,
       });
-      const durationMs = timeframeToMs(selectedTimeframe);
-      const expiresAt = new Date(Date.now() + durationMs).toISOString();
-      void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
-      beginSignalResult({ ...result, expiresAt });
-      recordSignalBackground({ ...result, expiresAt });
-      hapticSuccess();
-      logger.info('Signal', 'received', result.direction, `${result.confidence}%`, entryPrice);
+    };
+
+    const watchdog = setTimeout(() => {
+      finish(timeoutFailure(selectedAsset!.symbol));
+    }, SIGNAL_HARD_DEADLINE_MS);
+
+    try {
+      await runAnalysisAnimation(ANALYSIS_DURATION_MS);
+      if (abort.signal.aborted) return;
+      finish(await pricePromise);
     } catch (e) {
       if (abort.signal.aborted) return;
       logger.error('Signal', 'local generation failed', e);
@@ -410,6 +498,10 @@ export function SignalModal() {
       setSignalPhase('idle');
       hapticFeedback('heavy');
     } finally {
+      clearTimeout(watchdog);
+      if (!finished && !abort.signal.aborted) {
+        finish(timeoutFailure(selectedAsset!.symbol));
+      }
       if (activeSignalAbort === abort) activeSignalAbort = null;
     }
   };
@@ -430,29 +522,38 @@ export function SignalModal() {
 
     try {
       void api.requestFocus(selectedAsset.symbol, 60_000).catch(() => {});
+      refreshPoPriceBackground(selectedAsset.symbol);
+      logSignalEvent('cover_start', { symbol: selectedAsset.symbol, multiplier: next });
       await runAnalysisAnimation(COVERAGE_ANALYSIS_MS);
 
-      const entryPrice = await fetchFreshPoPrice(selectedAsset.symbol);
-      if (entryPrice == null) {
-        setSignalError(t.openAssetOnPlatform);
+      const verified = await fetchVerifiedPoPrice(selectedAsset.symbol, 2000);
+      if (!verified.ok) {
+        setSignalError(mapVerifyError(verified, t));
         setSignalPhase('settled');
         return;
       }
 
       const durationMs = timeframeToMs(selectedTimeframe);
+      const createdAt = new Date().toISOString();
       const expiresAt = new Date(Date.now() + durationMs).toISOString();
       const nextResult = {
         ...signalResult,
         id: `sig_${Date.now()}_cov${overlayNumberFromMultiplier(next)}`,
-        entryPrice,
+        entryPrice: verified.data.price,
         expiresAt,
-        createdAt: new Date().toISOString(),
+        createdAt,
       };
       beginSignalResult(nextResult);
       recordSignalBackground(nextResult);
+      logSignalEvent('cover_ok', {
+        symbol: selectedAsset.symbol,
+        entryPrice: verified.data.price,
+        multiplier: next,
+        expiresAt,
+      });
       void api.requestFocus(selectedAsset.symbol, durationMs + 20_000).catch(() => {});
       hapticSuccess();
-      logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`, entryPrice);
+      logger.info('Signal', 'coverage retry', signalResult.direction, `×${next}`, verified.data.price);
     } catch (e) {
       const err = e as ApiError;
       logger.error('Signal', 'coverage failed', err.code, err.message);
@@ -501,6 +602,11 @@ export function SignalModal() {
               </div>
             </div>
             <div className="text-right">
+              {headerPrice != null && (
+                <p className="font-display text-sm font-semibold text-prime-gold-light">
+                  {headerPrice.toLocaleString('uk-UA', { maximumFractionDigits: 5 })}
+                </p>
+              )}
               <p className="text-xs text-slate-500">{t.payout}</p>
               <motion.p
                 key={liveAsset.payout}
@@ -526,7 +632,7 @@ export function SignalModal() {
             </div>
           )}
 
-          {overlayLabel && (signalPhase === 'result' || signalPhase === 'settled') && (
+          {overlayLabel && (signalPhase === 'result' || signalPhase === 'settling' || signalPhase === 'settled') && (
             <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-xs text-amber-300">
               {overlayLabel} · <span className="font-bold">×{martingaleMultiplier}</span>
             </div>
@@ -615,7 +721,6 @@ export function SignalModal() {
                     activeStep={Math.min(loadingStep, t.loading.length - 1)}
                     title={loadingTitle || t.analyzingMarket}
                   />
-                  <p className="mt-2 text-center text-[11px] text-prime-gold/80">{t.fetchingLivePrice}</p>
                 </>
               )}
             </>
@@ -623,6 +728,9 @@ export function SignalModal() {
 
           {signalPhase === 'result' && signalResult && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+              <div className="mb-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-200">
+                {statusLabel(signalStatus ?? 'ACTIVE', t)}
+              </div>
               <DirectionHero
                 isCall={isCall}
                 title={isCall ? `${t.buy} · ${t.up}` : `${t.sell} · ${t.down}`}
@@ -683,20 +791,38 @@ export function SignalModal() {
             </motion.div>
           )}
 
+          {signalPhase === 'settling' && signalResult && (
+            <div className="py-10 text-center">
+              <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-prime-gold/30 border-t-prime-gold" />
+              <p className="font-serif text-sm text-prime-gold-light">{t.settlingResult}</p>
+              <p className="mt-2 text-xs text-slate-500">{t.exitPrice}: …</p>
+            </div>
+          )}
+
           {signalPhase === 'settled' && signalResult && settlement && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-              {settlement.outcome === 'win' ? (
+              <div className="mb-3 rounded-xl border border-prime-gold/30 bg-prime-gold/10 px-3 py-2 text-center text-xs font-bold text-prime-gold-light">
+                {statusLabel(settlement.status, t)}
+              </div>
+
+              {settlement.status === 'WIN' || settlement.status === 'COVER_WIN' ? (
                 <OutcomeBanner
                   variant="win"
-                  title={t.tradeWon}
+                  title={settlement.status === 'COVER_WIN' ? t.signalStatusCoverWin : t.tradeWon}
                   subtitle={overlayLabel ? `${overlayLabel} — ${t.successCoverage}` : undefined}
                 />
               ) : settlement.outcome === 'undetermined' ? (
                 <OutcomeBanner variant="draw" title={t.tradeDraw} subtitle={t.resultUndetermined} />
-              ) : (
+              ) : settlement.status === 'NEED_COVER' ? (
                 <OutcomeBanner
                   variant="loss"
                   title={t.tradeLost}
+                  subtitle={t.signalStatusNeedCover}
+                />
+              ) : (
+                <OutcomeBanner
+                  variant="loss"
+                  title={settlement.status === 'COVER_LOSS' ? t.signalStatusCoverLoss : t.tradeLost}
                   subtitle={nextMultiplier ? t.martingaleHint : t.stopTradingAsset}
                 />
               )}
@@ -709,22 +835,26 @@ export function SignalModal() {
                 <div className="flex justify-between border-b border-white/5 py-2">
                   <span className="text-slate-500">{t.direction}</span>
                   <span className={`font-display font-bold tracking-wide ${settlement.direction === 'CALL' ? 'text-emerald-300' : 'text-rose-300'}`}>
-                    {settlement.direction === 'CALL' ? t.buy : t.sell}
+                    {settlement.direction === 'CALL' ? `${t.buy} · ${t.up}` : `${t.sell} · ${t.down}`}
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-white/5 py-2">
                   <span className="text-slate-500">{t.entry}</span>
                   <span className="font-semibold text-prime-gold-light">{formatPrice(settlement.entryPrice)}</span>
                 </div>
-                <div className="flex justify-between pt-2">
+                <div className="flex justify-between border-b border-white/5 py-2">
                   <span className="text-slate-500">{t.exitPrice}</span>
                   <span className="font-semibold text-prime-gold-light">
                     {settlement.exitPrice != null ? formatPrice(settlement.exitPrice) : '—'}
                   </span>
                 </div>
+                <div className="flex justify-between pt-2">
+                  <span className="text-slate-500">{t.signalStatusLabel}</span>
+                  <span className="font-semibold text-white">{statusLabel(settlement.status, t)}</span>
+                </div>
               </div>
 
-              {settlement.outcome === 'loss' && nextMultiplier && (
+              {settlement.coverNeeded && nextMultiplier && (
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.98 }}
@@ -735,7 +865,7 @@ export function SignalModal() {
                 </motion.button>
               )}
 
-              {(settlement.outcome === 'win' || settlement.outcome === 'undetermined' || !nextMultiplier) && (
+              {(settlement.outcome === 'win' || settlement.outcome === 'undetermined' || !settlement.coverNeeded) && (
                 <motion.button
                   type="button"
                   whileTap={{ scale: 0.98 }}

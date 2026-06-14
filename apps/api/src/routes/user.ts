@@ -9,6 +9,7 @@ import {
   LEARNING,
 } from '@trade-app/shared';
 import { getMarketProvider, getMarketMode } from '../market.js';
+import { getPublicMarketStatus } from '../services/public-market-status.js';
 import { requestFocus, clearFocus } from '../services/focus.js';
 import { prisma } from '../db.js';
 import { log } from '../logger.js';
@@ -216,7 +217,7 @@ router.get('/assets', async (req, res) => {
   if (!user || !hasLimitedAccess(user)) return res.status(403).json({ error: 'Access denied', code: 'NO_ACCESS' });
   const provider = getMarketProvider();
   const assets = await provider.getAssets();
-  res.json({ assets, dataSource: provider.status });
+  res.json({ assets, dataSource: getPublicMarketStatus() });
 });
 
 /** Live exit price from bridge — no synthetic fallback (signal settlement). */
@@ -229,7 +230,8 @@ router.get('/assets/:symbol/price', async (req, res) => {
     return res.status(503).json({ error: 'DATA SOURCE NOT CONFIGURED', code: 'DATA_SOURCE_NOT_CONFIGURED' });
   }
   if (getMarketMode() === 'platform') {
-    requestFocus(symbol, 15_000);
+    const waitMs = Math.min(Number(req.query.waitMs) || 1200, 3500);
+    requestFocus(symbol, waitMs + 60_000);
   }
   try {
     if (provider instanceof BridgeMarketDataProvider) {
@@ -243,7 +245,7 @@ router.get('/assets/:symbol/price', async (req, res) => {
           at: Date.now(),
         });
       }
-      const waitMs = Math.min(Number(req.query.waitMs) || 800, 2000);
+      const waitMs = Math.min(Number(req.query.waitMs) || 1200, 3500);
       const price = await provider.waitForLivePrice(symbol, waitMs, { allowSynthetic: false });
       return res.json({ symbol, price, live: true, at: Date.now() });
     }
@@ -501,6 +503,17 @@ router.post('/signals/record', async (req, res) => {
   if (!id || !symbol || !direction || !timeframe || !expiresAt || !Number.isFinite(entryPrice)) {
     return res.status(400).json({ error: 'Invalid signal payload' });
   }
+
+  log.info('Signal record', {
+    user: user.id,
+    id,
+    symbol,
+    direction,
+    timeframe,
+    entryPrice,
+    expiresAt,
+    createdAt: new Date().toISOString(),
+  });
 
   res.json({ ok: true });
   void prisma.signalHistory

@@ -120,6 +120,11 @@ export interface MarketDataStatus {
   bridgeConnected?: boolean;
   bridgeStale?: boolean;
   bridgeLastUpdate?: number | null;
+  collectorOnline?: boolean;
+  collectorWsConnected?: boolean;
+  collectorMessage?: string;
+  collectorVersion?: string;
+  collectorPricedCount?: number;
 }
 
 export interface AssetsResponse {
@@ -139,6 +144,7 @@ export interface MarketDataRow {
 export const api = {
   health: () => fetchJson<{ status: string; market: MarketDataStatus }>('/api/health', { timeoutMs: 8000 }),
   getMarketStatus: () => fetchJson<MarketDataStatus>('/api/market/status', { timeoutMs: 8000 }),
+  getCollectorStatus: () => fetchJson<CollectorStatus>('/api/collector/status', { timeoutMs: 6000 }),
   setMarketMode: (mode: 'mock' | 'platform' | 'unconfigured') =>
     fetchJson<MarketDataStatus>('/api/market/mode', { method: 'POST', body: JSON.stringify({ mode }), timeoutMs: 8000 }),
   getMe: () => fetchJson<UserProfile>('/api/me'),
@@ -159,13 +165,14 @@ export const api = {
     fetchJson<{ ok: boolean; symbol: string }>('/api/focus', {
       method: 'POST',
       body: JSON.stringify({ symbol, ttlMs }),
+      timeoutMs: 2000,
     }),
-  getLivePrice: (symbol: string, waitMs = 1200) =>
+  getLivePrice: (symbol: string, waitMs = 1200, opts?: { timeoutMs?: number }) =>
     fetchJson<{ symbol: string; price: number; live: boolean }>(
       `/api/assets/${encodeURIComponent(symbol)}/price?waitMs=${waitMs}`,
-      { timeoutMs: 8000 },
+      { timeoutMs: opts?.timeoutMs ?? Math.min(2500, waitMs + 900) },
     ),
-  getTicks: (asset: string, since = 0) =>
+  getTicks: (asset: string, since = 0, opts?: { timeoutMs?: number }) =>
     fetchJson<{
       asset: string;
       ticks: { price: number; ts: number; live?: boolean }[];
@@ -174,7 +181,9 @@ export const api = {
       live: boolean;
       catalog: number | null;
       display: number | null;
-    }>(`/api/ticks?asset=${encodeURIComponent(asset)}&since=${since}`, { timeoutMs: 3000 }),
+    }>(`/api/ticks?asset=${encodeURIComponent(asset)}&since=${since}`, {
+      timeoutMs: opts?.timeoutMs ?? 1500,
+    }),
   getAssetAnalysis: (symbol: string) => fetchJson<MarketAnalysisData>(`/api/assets/${encodeURIComponent(symbol)}/analysis`),
   generateSignal: (body: Record<string, unknown>, opts?: { signal?: AbortSignal; timeoutMs?: number }) =>
     fetchJson<SignalResult>('/api/signals/generate', {

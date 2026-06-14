@@ -9,6 +9,7 @@ export * from './market/price-validation.js';
 export * from './market/synthetic-price.js';
 export * from './market/official-pocket-provider.js';
 export * from './market/collector-types.js';
+export * from './market/collector-connection.js';
 export * from './market/mock-data.js';
 export * from './market/pocket-assets.js';
 export * from './market/asset-flags.js';

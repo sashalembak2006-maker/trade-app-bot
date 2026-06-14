@@ -1,12 +1,12 @@
 import { create } from 'zustand';
-import type { Asset, SignalResult, Language, AssetCategory, TradeSettlement, MartingaleMultiplier } from '../types';
+import type { Asset, SignalResult, Language, AssetCategory, TradeSettlement, MartingaleMultiplier, SignalStatus } from '../types';
 
 function isPlausiblePrice(price: number): boolean {
   return Number.isFinite(price) && price > 0 && price < 1_000_000;
 }
 import type { UserProfile, AccessStatus, MarketDataStatus } from '../services/api';
 
-export type SignalPhase = 'idle' | 'loading' | 'result' | 'settled';
+export type SignalPhase = 'idle' | 'loading' | 'result' | 'settling' | 'settled';
 
 interface AppState {
   language: Language;
@@ -33,6 +33,7 @@ interface AppState {
   signalCurrentPrice: number | null;
   /** Locked PO entry price when signal was issued (for win/loss vs live exit). */
   signalLockedEntryPrice: number | null;
+  signalStatus: SignalStatus | null;
 
   setLanguage: (lang: Language) => void;
   setSearchQuery: (q: string) => void;
@@ -84,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   signalError: null,
   signalCurrentPrice: null,
   signalLockedEntryPrice: null,
+  signalStatus: null,
 
   setLanguage: (language) => set({ language }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -121,7 +123,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       signalCurrentPrice:
         price != null &&
         get().signalResult?.symbol === symbol &&
-        (get().signalPhase === 'result' || get().signalPhase === 'loading')
+        (get().signalPhase === 'result' || get().signalPhase === 'loading' || get().signalPhase === 'settling')
           ? price
           : get().signalCurrentPrice,
     });
@@ -136,6 +138,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       signalError: null,
       signalLockedEntryPrice: null,
       signalCurrentPrice: null,
+      signalStatus: null,
     }),
   setActiveCategory: (activeCategory) => set({ activeCategory }),
   setSelectedTimeframe: (selectedTimeframe) => set({ selectedTimeframe }),
@@ -149,6 +152,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       signalResult,
       signalPhase: 'result',
+      signalStatus: 'ACTIVE',
       signalCurrentPrice: signalResult.entryPrice,
       signalLockedEntryPrice:
         state.martingaleMultiplier === 1
@@ -156,7 +160,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           : state.signalLockedEntryPrice ?? signalResult.entryPrice,
       settlement: null,
     })),
-  setSettlement: (settlement) => set({ settlement }),
+  setSettlement: (settlement) =>
+    set({
+      settlement,
+      signalStatus: settlement?.status ?? null,
+    }),
   setMartingaleMultiplier: (martingaleMultiplier) => set({ martingaleMultiplier }),
   resetSignalSession: () =>
     set({
@@ -167,6 +175,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       signalError: null,
       signalLockedEntryPrice: null,
       signalCurrentPrice: null,
+      signalStatus: null,
     }),
   setLoadingStep: (loadingStep) => set({ loadingStep }),
   toggleSection: (section) => set({ openSection: get().openSection === section ? null : section }),

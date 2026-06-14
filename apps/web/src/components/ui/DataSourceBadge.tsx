@@ -48,8 +48,8 @@ export function DataSourceBadge() {
     },
   };
 
-  // Premium UI: hide technical data-source labels when market is connected.
-  if (state === 'hybrid' || state === 'real' || state === 'stale' || state === 'demo') return null;
+  // Premium UI: hide badge only when live data is healthy.
+  if (state === 'real' || state === 'demo') return null;
 
   const cfg = map[state];
 

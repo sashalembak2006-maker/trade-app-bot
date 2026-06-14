@@ -160,6 +160,12 @@ export interface MarketDataStatus {
   lastUpdate?: number | null;
   /** number of assets currently held by the provider */
   assetCount?: number;
+  /** VPS collector heartbeat (optional — merged by API) */
+  collectorOnline?: boolean;
+  collectorWsConnected?: boolean;
+  collectorMessage?: string;
+  collectorVersion?: string;
+  collectorPricedCount?: number;
 }
 
 export interface BridgeAssetInput {

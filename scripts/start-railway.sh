@@ -1,5 +1,5 @@
 #!/bin/sh
-# Railway: API + Bot (+ optional Collector)
+# Railway: API + Bot (+ optional Collector — OFF by default for Bridge/stream mode)
 set -e
 PORT="${PORT:-3001}"
 export API_URL="http://127.0.0.1:${PORT}"
@@ -26,11 +26,20 @@ done
 ) &
 BOT_PID=$!
 
-if [ -n "$PO_AUTH_MESSAGE" ] && [ -n "$PO_WS_URL" ]; then
-  echo "[railway] Starting PO collector..."
+COLLECTOR_ON="${COLLECTOR_ENABLED:-false}"
+case "$COLLECTOR_ON" in
+  true|1|yes|YES) COLLECTOR_ON=true ;;
+  *) COLLECTOR_ON=false ;;
+esac
+
+if [ "$COLLECTOR_ON" = "true" ] && [ -n "$PO_AUTH_MESSAGE" ] && [ -n "$PO_WS_URL" ]; then
+  echo "[railway] Starting PO collector (COLLECTOR_ENABLED=true)..."
   npm run start -w @trade-app/collector &
+elif [ -n "$PO_AUTH_MESSAGE" ] && [ -n "$PO_WS_URL" ]; then
+  echo "[railway] Collector SKIPPED — use Chrome Bridge extension (no PO session conflict)."
+  echo "[railway] For 24/7 VPS feed: COLLECTOR_ENABLED=true + separate Demo PO account."
 else
-  echo "[railway] Collector skipped (set PO_AUTH_MESSAGE + PO_WS_URL for 24/7 without Bridge)"
+  echo "[railway] Collector skipped (PO_AUTH not set — Bridge extension mode)"
 fi
 
 wait $API_PID $BOT_PID

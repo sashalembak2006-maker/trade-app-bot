@@ -8,6 +8,13 @@ export type AssetCategory =
 
 export type SignalDirection = 'CALL' | 'PUT';
 export type TradeOutcome = 'win' | 'loss' | 'undetermined';
+export type SignalStatus =
+  | 'ACTIVE'
+  | 'WIN'
+  | 'LOSS'
+  | 'NEED_COVER'
+  | 'COVER_WIN'
+  | 'COVER_LOSS';
 export type MartingaleMultiplier = 1 | 2 | 4;
 export type TrendDirection = 'up' | 'down' | 'sideways';
 export type Language = 'uk' | 'en';
@@ -101,10 +108,13 @@ export interface LearningArticle {
 
 export interface TradeSettlement {
   outcome: TradeOutcome;
+  status: SignalStatus;
   entryPrice: number;
   exitPrice: number | null;
   direction: SignalDirection;
   multiplier: MartingaleMultiplier;
+  coverNeeded: boolean;
+  settledAt: string;
 }
 
 export interface MarketAnalysisData {

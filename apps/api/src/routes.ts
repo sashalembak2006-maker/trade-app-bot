@@ -7,26 +7,28 @@ import collectorRoutes from './routes/collector.js';
 import botAdminRoutes from './routes/bot-admin.js';
 import ticksRoutes from './routes/ticks.js';
 import { getMarketStatus, getMarketMode, setMarketMode, isRuntimeModeSwitchAllowed } from './market.js';
+import { getPublicMarketStatus } from './services/public-market-status.js';
 import { getBridgeMonitorSnapshot } from './services/bridge-status.js';
 import { log } from './logger.js';
 
 const router = Router();
 
 router.get('/health', (_req, res) => {
-  res.json({ status: 'ok', app: 'PRIME TRADE BOT', market: getMarketStatus(), bridge: getBridgeMonitorSnapshot() });
+  res.json({
+    status: 'ok',
+    app: 'PRIME TRADE BOT',
+    appVersion: process.env.APP_VERSION ?? 'dev',
+    market: getMarketStatus(),
+    bridge: getBridgeMonitorSnapshot(),
+  });
 });
 
 /** Public market data-source status — drives the data-source badge + signal gating. */
 router.get('/market/status', (_req, res) => {
-  const status = getMarketStatus();
-  const bridge = getBridgeMonitorSnapshot();
   res.json({
-    ...status,
+    ...getPublicMarketStatus(),
     activeMode: getMarketMode(),
     hybridPrices: isBridgeSyntheticFallbackEnabled(),
-    bridgeConnected: bridge.connected,
-    bridgeStale: bridge.stale,
-    bridgeLastUpdate: bridge.lastUpdate,
   });
 });
 

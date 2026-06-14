@@ -1,4 +1,4 @@
-import type { MartingaleMultiplier, SignalDirection, TradeSettlement } from '../types';
+import type { MartingaleMultiplier, SignalDirection, SignalStatus, TradeOutcome, TradeSettlement } from '../types';
 
 const PRICE_EPS = 1e-7;
 
@@ -7,7 +7,7 @@ export function settleSignal(
   entryPrice: number,
   exitPrice: number,
   multiplier: MartingaleMultiplier = 1,
-): TradeSettlement {
+): Omit<TradeSettlement, 'status' | 'coverNeeded' | 'settledAt'> {
   if (Math.abs(exitPrice - entryPrice) < PRICE_EPS) {
     return {
       outcome: 'undetermined',
@@ -27,6 +27,54 @@ export function settleSignal(
     exitPrice,
     direction,
     multiplier,
+  };
+}
+
+export function deriveSignalStatus(
+  outcome: TradeOutcome,
+  multiplier: MartingaleMultiplier,
+  coverAvailable: boolean,
+): SignalStatus {
+  const isCover = multiplier > 1;
+  if (outcome === 'win') return isCover ? 'COVER_WIN' : 'WIN';
+  if (outcome === 'loss') {
+    if (isCover) return 'COVER_LOSS';
+    return coverAvailable ? 'NEED_COVER' : 'LOSS';
+  }
+  if (isCover) return 'COVER_LOSS';
+  return coverAvailable ? 'NEED_COVER' : 'LOSS';
+}
+
+export function buildSettlement(
+  direction: SignalDirection,
+  entryPrice: number,
+  exitPrice: number | null,
+  multiplier: MartingaleMultiplier,
+): TradeSettlement {
+  const coverAvailable = nextMartingaleMultiplier(multiplier) != null;
+  const settledAt = new Date().toISOString();
+
+  if (exitPrice == null) {
+    const status = deriveSignalStatus('undetermined', multiplier, coverAvailable);
+    return {
+      outcome: 'undetermined',
+      status,
+      entryPrice,
+      exitPrice: null,
+      direction,
+      multiplier,
+      coverNeeded: status === 'NEED_COVER',
+      settledAt,
+    };
+  }
+
+  const core = settleSignal(direction, entryPrice, exitPrice, multiplier);
+  const status = deriveSignalStatus(core.outcome, multiplier, coverAvailable);
+  return {
+    ...core,
+    status,
+    coverNeeded: status === 'NEED_COVER',
+    settledAt,
   };
 }
 

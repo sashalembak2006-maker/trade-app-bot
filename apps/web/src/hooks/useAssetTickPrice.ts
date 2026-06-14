@@ -25,6 +25,14 @@ export function useAssetTickPrice(
     setPayout(seedPayout);
   }, [symbol, seedPayout, bridgePrice]);
 
+  const selectedSymbol = useAppStore((s) => s.selectedAsset?.symbol);
+  const isFocused = selectedSymbol === symbol;
+
+  useEffect(() => {
+    if (!isFocused) return;
+    void api.requestFocus(symbol, 120_000).catch(() => {});
+  }, [isFocused, symbol]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -38,7 +46,9 @@ export function useAssetTickPrice(
     const poll = async () => {
       if (useAppStore.getState().signalPhase === 'loading') return;
       try {
-        const data = await api.getTicks(symbol, sinceRef.current);
+        const data = await api.getTicks(symbol, sinceRef.current, {
+          timeoutMs: isFocused ? 600 : 800,
+        });
         if (cancelled) return;
         if (data.payout != null) setPayout(data.payout);
         if (data.display != null && isPlausibleAssetPrice(data.display, symbol)) {
@@ -74,9 +84,12 @@ export function useAssetTickPrice(
           }
         }
         applyBridge();
-        if (bridgePrice == null) {
+        const storePrice = useAppStore
+          .getState()
+          .assets.find((a) => a.symbol === symbol)?.lastKnownPrice;
+        if (storePrice != null && isPlausibleAssetPrice(storePrice, symbol)) {
           setLive(false);
-          setPrice(null);
+          setPrice(storePrice);
         }
       } catch {
         applyBridge();
@@ -84,12 +97,12 @@ export function useAssetTickPrice(
     };
 
     void poll();
-    const id = setInterval(poll, 700);
+    const id = setInterval(poll, isFocused ? 120 : 300);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [symbol, bridgePrice]);
+  }, [symbol, bridgePrice, isFocused]);
 
   return { price, payout, live };
 }

@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test dist/market/collector-connection.test.js"
   },
   "devDependencies": {
     "typescript": "~5.8.3"

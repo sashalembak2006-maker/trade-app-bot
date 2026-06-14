@@ -16,6 +16,7 @@ import { MarketAnalysisSection } from '../components/sections/MarketAnalysisSect
 import { SignalModal } from '../components/signal/SignalModal';
 import { VipModal } from '../components/vip/VipModal';
 import { DataSourceBadge } from '../components/ui/DataSourceBadge';
+import { CollectorHealthBanner } from '../components/ui/CollectorHealthBanner';
 import { useAppStore } from '../store/useAppStore';
 import { useT } from '../i18n/translations';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -97,8 +98,12 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
   }, [setAssets, setMarketStatus]);
 
-  // Poll assets — keep list prices fresh (PO bridge scan).
+  const signalPhase = useAppStore((s) => s.signalPhase);
+
+  // Poll assets — pause during signal load (Telegram WebView ~6 connections).
   useEffect(() => {
+    if (signalPhase === 'loading') return;
+
     const reloadAssets = () => {
       api
         .getAssets()
@@ -110,9 +115,20 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     };
 
     reloadAssets();
-    const id = setInterval(reloadAssets, 150);
+    const busy = signalPhase === 'result' || signalPhase === 'settling';
+    const intervalMs = busy ? 500 : 150;
+    const id = setInterval(reloadAssets, intervalMs);
     return () => clearInterval(id);
-  }, [setMarketStatus, setAssets]);
+  }, [setMarketStatus, setAssets, signalPhase]);
+
+  useEffect(() => {
+    const poll = () => {
+      api.getMarketStatus().then(setMarketStatus).catch(() => { /* keep last */ });
+    };
+    poll();
+    const id = setInterval(poll, 10_000);
+    return () => clearInterval(id);
+  }, [setMarketStatus]);
 
   const notConfigured = marketStatus && !marketStatus.configured && marketStatus.mode !== 'live';
   const platformUnavailable =
@@ -123,10 +139,16 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
     getRuntimeApiUrl() || 'https://prime-trade-production.up.railway.app';
   const bridgeHint = `${t.bridgeNotConnectedHint}\n\nBackend URL:\n${apiBase}`;
 
-  const bridgeStale =
+  const collectorOk =
+    marketStatus?.collectorOnline === true && marketStatus?.collectorWsConnected === true;
+
+  const bridgeNeedsAttention =
     marketStatus?.mode === 'live' &&
-    marketStatus?.bridgeStale === true &&
-    marketStatus?.bridgeConnected !== true;
+    !collectorOk &&
+    (marketStatus?.bridgeStale === true ||
+      marketStatus?.bridgeConnected !== true ||
+      marketStatus?.stale === true ||
+      !marketStatus?.configured);
 
   return (
     <div className="relative min-h-full bg-prime-bg">
@@ -174,8 +196,9 @@ export function MainApp({ limited = false, access, telegramId, apiError, onRefre
             />
           </div>
         )}
-        <DataSourceBadge />
-        {bridgeStale && (
+        {!bridgeNeedsAttention && <DataSourceBadge />}
+        {!bridgeNeedsAttention && <CollectorHealthBanner />}
+        {bridgeNeedsAttention && (
           <div className="mx-4 mt-2 rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-3 text-xs text-orange-200">
             <p className="text-center font-bold">⚠️ {t.bridgeStaleTitle}</p>
             <p className="mt-1 text-center text-[11px] leading-relaxed text-orange-100/90">{t.bridgeStaleHint}</p>

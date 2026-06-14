@@ -7,8 +7,22 @@ import { AssetRow } from './AssetRow';
 
 const CATEGORIES: (AssetCategory | 'favorite' | 'all')[] = ['all', 'forex_otc', 'favorite'];
 
+async function focusAndFetchPrice(symbol: string): Promise<number | null> {
+  for (let i = 0; i < 6; i++) {
+    try {
+      const q = await api.getLivePrice(symbol, 350, { timeoutMs: 800 });
+      if (q.price != null && q.price > 0) return q.price;
+    } catch {
+      /* extension switching pair */
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
 export function ActivesSection() {
-  const { assets, searchQuery, activeCategory, setActiveCategory, setSelectedAsset, language, toggleFavorite } = useAppStore();
+  const { assets, searchQuery, activeCategory, setActiveCategory, setSelectedAsset, language, toggleFavorite, updateAssetPrice } =
+    useAppStore();
   const t = useT(language);
 
   const filtered = useMemo(() => {
@@ -24,6 +38,19 @@ export function ActivesSection() {
   const catLabel = (c: typeof activeCategory) => {
     if (c === 'all') return t.all;
     return t[c as keyof typeof t] as string ?? c;
+  };
+
+  const handleSelect = (a: (typeof assets)[0]) => {
+    setSelectedAsset(a);
+    void api.requestFocus(a.symbol, 120_000).catch(() => {});
+    void focusAndFetchPrice(a.symbol).then((price) => {
+      if (price == null) return;
+      updateAssetPrice(a.symbol, price, a.payout, a.change);
+      const cur = useAppStore.getState().selectedAsset;
+      if (cur?.symbol === a.symbol) {
+        setSelectedAsset({ ...a, price, lastKnownPrice: price });
+      }
+    });
   };
 
   return (
@@ -58,11 +85,8 @@ export function ActivesSection() {
             asset={a}
             index={i}
             catLabel={catLabel(a.category as typeof activeCategory)}
-            priceOnSignalStart={t.priceOnSignalStart}
-            onSelect={() => {
-              setSelectedAsset(a);
-              void api.requestFocus(a.symbol, 90_000).catch(() => {});
-            }}
+            priceOnSignalStart={t.priceTapForLive}
+            onSelect={() => handleSelect(a)}
             onToggleFavorite={() => toggleFavorite(a.symbol)}
           />
         ))}

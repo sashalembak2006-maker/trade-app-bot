@@ -371,6 +371,34 @@ async function markFetchFailure(message) {
   });
 }
 
+async function wakePoTabs() {
+  const tabs = await chrome.tabs.query({ url: PO_TAB_URLS });
+  await chrome.storage.local.set({ poTabCount: tabs.length, poTabCheckedAt: Date.now() });
+  for (const tab of tabs) {
+    if (tab.id == null) continue;
+    chrome.tabs.sendMessage(tab.id, { type: 'bridge-probe' }).catch(() => {
+      chrome.tabs.reload(tab.id).catch(() => {});
+    });
+  }
+  await syncRelayWithPoTabs().catch(() => {});
+  await flushAndPost();
+  return tabs.length;
+}
+
+async function openPoTab() {
+  const tabs = await chrome.tabs.query({ url: PO_TAB_URLS });
+  if (tabs.length > 0 && tabs[0].id != null) {
+    await chrome.tabs.update(tabs[0].id, { active: true });
+    await chrome.tabs.reload(tabs[0].id);
+    return tabs[0].id;
+  }
+  const tab = await chrome.tabs.create({
+    url: 'https://pocketoption.com/en/cabinet/demo-quick-high-low/',
+    active: true,
+  });
+  return tab.id;
+}
+
 async function flushAndPost() {
   const { assets, frameCount, host, activeSymbol } = mergeFrameAssets();
   const now = Date.now();
@@ -451,9 +479,6 @@ async function postAssets(assets, activeSymbol) {
 
     const now = Date.now();
     if (now - lastPostedAt < POST_INTERVAL_MS) {
-      if (lastPostedAt > 0 && now - lastPostedAt < 30_000) {
-        await markRecentSuccess(assets.length);
-      }
       return;
     }
 
@@ -540,6 +565,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       poAuthCapturedAt: msg.at ?? Date.now(),
     });
     return false;
+  }
+
+  if (msg.type === 'bridge-wake-po') {
+    wakePoTabs()
+      .then((count) => sendResponse({ ok: true, poTabCount: count }))
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
+
+  if (msg.type === 'bridge-open-po') {
+    openPoTab()
+      .then((tabId) => sendResponse({ ok: true, tabId }))
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
   }
 
   if (msg.type === 'bridge-frame-data') {
@@ -697,7 +736,7 @@ async function pollFocus() {
   }
 }
 
-setInterval(pollFocus, 800);
+  setInterval(pollFocus, 500);
 syncRelayWithPoTabs().catch(() => {});
 
 /** Service worker POST loop — do not rely on relay tab (throttled when hidden). */

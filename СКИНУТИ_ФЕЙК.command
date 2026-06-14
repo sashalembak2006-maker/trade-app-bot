@@ -23,7 +23,8 @@ if (res.ok) {
   console.log('  Потім запусти ДЕПЛОЙ.command для версії 1.5.2-honest');
 } else {
   console.log('');
-  console.log('✗ Помилка — спочатку задеплой новий код (ДЕПЛОЙ.command)');
+  console.log('✗ Помилка — спочатку задеплой новий код (ДЕПЛОЙ.command), потім знову СКИНУТИ_ФЕЙК');
+  console.log('  (404 = endpoint /api/bridge/reset ще не на Railway)');
 }
 EOF
 
