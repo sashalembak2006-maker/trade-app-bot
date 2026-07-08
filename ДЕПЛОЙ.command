@@ -1,0 +1,20 @@
+#!/bin/bash
+cd "$(dirname "$0")"
+clear
+echo ""
+echo "════════════════════════════════════════════"
+echo " PRIME TRADE → Railway DEPLOY"
+echo "════════════════════════════════════════════"
+echo ""
+echo "Потрібен інтернет. Чекай 3–5 хв після SUCCESS."
+echo "(Якщо зависає на Variables — закрий і запусти ДЕПЛОЙ_ШВИДКО.command)"
+echo ""
+
+bash .railway-deploy-run.sh || { echo ""; echo "✗ Помилка деплою"; read -p "Enter..."; exit 1; }
+
+echo ""
+echo "✓ Відкрий через 4 хв:"
+echo "  https://prime-trade-production.up.railway.app/api/collector/status"
+echo "  version: 1.5.6-signal-fast"
+echo ""
+read -p "Enter щоб закрити..."
